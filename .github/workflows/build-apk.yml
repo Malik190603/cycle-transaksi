@@ -1,0 +1,116 @@
+name: Build APK Android
+
+# "gaspol" = commit + push ke main → workflow ini membangun APK dan menerbitkannya di Releases.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: apk-release
+  cancel-in-progress: false
+
+jobs:
+  apk:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 2
+
+      - name: Nomor versi & saluran rilis
+        id: ver
+        # Versi semver dari package.json (+ PATCH otomatis). Pesan commit berisi [beta] → rilis beta (prerelease).
+        env:
+          MSG: ${{ github.event.head_commit.message }}
+        run: |
+          node scripts/version.mjs
+          beta=false; case "$MSG" in *"[beta]"*) beta=true;; esac
+          echo "beta=$beta" >> "$GITHUB_OUTPUT"; echo "Saluran: $([ $beta = true ] && echo beta || echo stabil)"
+
+      - name: Basis native (update kilat)
+        # Rilis tanpa perubahan native (plugin, izin, ikon, konfigurasi Capacitor, kunci) dipasang langsung
+        # di HP pengguna tanpa APK; selain itu APK ini menjadi basis native baru.
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: node scripts/live.mjs base
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Pasang dependensi
+        run: npm ci
+
+      - name: Susun aplikasi web (www/) dari src/
+        # GAS_URL (opsional): Settings › Secrets and variables › Actions › Variables. Kosong = diisi di layar masuk.
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+          GAS_URL: ${{ vars.GAS_URL }}
+        run: node scripts/build-web.mjs
+
+      - name: Pemeriksaan kode sebelum rilis
+        # Sintaks skrip, jembatan, konfigurasi, dan kunci rahasia. Gagal = tidak ada rilis.
+        run: npm run check
+
+      - name: Salin aplikasi web ke proyek Android
+        run: npx cap sync android
+
+      - name: Build APK (rilis)
+        working-directory: android
+        env:
+          VERSION_CODE: ${{ github.run_number }}
+        run: |
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses > /dev/null || true
+          chmod +x gradlew
+          ./gradlew assembleRelease --no-daemon --stacktrace
+
+      - name: Pastikan tanda tangan sama dengan versi sebelumnya
+        # Gagal (dan tidak rilis) bila APK tidak ditandatangani kunci tetap,
+        # supaya pengguna tidak pernah perlu uninstall untuk update.
+        run: |
+          EXPECTED=9bb5fac404fdf7c2a1ef5190f98e4069cf9202aa46b884c8a7521ba1fb764ef3
+          BT=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          "${BT}apksigner" verify --print-certs android/app/build/outputs/apk/release/app-release.apk | tee certs.txt
+          GOT=$(grep -m1 -i "certificate SHA-256 digest" certs.txt | awk '{print $NF}' | tr 'A-F' 'a-f')
+          echo "SHA-256 APK: $GOT"
+          if [ "$GOT" != "$EXPECTED" ]; then echo "::error::APK ditandatangani kunci lain ($GOT). Rilis dibatalkan."; exit 1; fi
+          "${BT}aapt" dump badging android/app/build/outputs/apk/release/app-release.apk | grep -E "^package:|application-debuggable" | tee badging.txt
+          if grep -q "application-debuggable" badging.txt; then echo "::error::APK masih bisa di-debug. Rilis dibatalkan."; exit 1; fi
+
+      - name: Beri nama file
+        run: cp android/app/build/outputs/apk/release/app-release.apk "CycleTransaksi-v${{ steps.ver.outputs.version }}.apk"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: CycleTransaksi-APK
+          path: CycleTransaksi-v*.apk
+
+      - name: Catatan rilis (dari pesan commit)
+        run: node scripts/release-notes.mjs
+
+      - name: Paket update kilat (web) + latest.json
+        run: node scripts/live.mjs pack
+
+      - name: Terbitkan di Releases
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: Cycle Transaksi v${{ steps.ver.outputs.version }}${{ steps.ver.outputs.beta == 'true' && ' (beta)' || '' }}
+          body_path: release-notes.md
+          prerelease: ${{ steps.ver.outputs.beta == 'true' }}
+          make_latest: ${{ steps.ver.outputs.beta == 'true' && 'false' || 'true' }}
+          files: |
+            CycleTransaksi-v*.apk
+            CycleTransaksi-web-*.zip
+            latest.json

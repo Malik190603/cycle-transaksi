@@ -1,0 +1,920 @@
+<script>
+// ---------- Task Investigasi ----------
+// Sejak v6: menutup task WAJIB isi Kategori Selisih (8 pilihan) + User PIC (dari database
+// mapping Master kolom I/J/K, fallback ke semua user Master kalau kategori belum ada
+// mapping-nya). Yang berhak menutup TETAP cuma role Inventory/Admin -- mapping cuma info
+// siapa penanggung jawab tindak lanjut, bukan pembatas akses.
+
+let investigasiFormDataCache = null;
+
+// v8.20: cermin dari KATEGORI_TANPA_BUKTI_ di Config.gs -- kategori yang TIDAK butuh
+// bukti transaksi WMS saat menutup task. 'Barang Sudah di Picking' juga jadi shortcut
+// auto-close (lihat listener selKategori di bawah).
+const KATEGORI_TANPA_BUKTI_ = ['Salah Hitung', 'Barang Sudah di Picking'];
+// v8.21: cermin dari KATEGORI_ADJUSTMENT_ di Config.gs -- kategori yang membutuhkan
+// bukti WMS-nya WAJIB bertipe ADJUSTMENT (bukan Move/Picking), qty sesuai tanda.
+// Dipakai untuk ganti label/hint kotak paste bukti secara dinamis (lihat updateBuktiVisibility).
+const KATEGORI_ADJUSTMENT_ = ['Adjustment Plus', 'Adjustment Minus'];
+
+function bukaTaskInvestigasi() {
+  if (!requireLogin_(['inventory', 'admin'])) return;
+  showScreen('screenTaskInvestigasi');
+  google.script.run
+    .withSuccessHandler(function (data) {
+      investigasiFormDataCache = data;
+      loadOpenTasks();
+    })
+    .withFailureHandler(function (err) {
+      onServerError_(err);
+      investigasiFormDataCache = { kategoriList: [], mapping: [], allUsers: [] };
+      loadOpenTasks();
+    })
+    .getInvestigasiFormData(currentUser.username);
+}
+
+// Susun opsi dropdown User PIC untuk kategori tertentu: prioritas user yang sudah di-mapping
+// admin untuk kategori itu; kalau belum ada satu pun, tampilkan semua user Master (fallback)
+// supaya penutup task tetap bisa jalan walau mapping belum lengkap.
+function picOptionsForKategori_(kategori) {
+  const data = investigasiFormDataCache || { mapping: [], allUsers: [] };
+  const matched = data.mapping.filter(function (m) { return m.kategori === kategori; });
+  const source = matched.length ? matched.map(function (m) { return { username: m.username, role: m.role }; }) : data.allUsers;
+  // dedup by username
+  const seen = {};
+  const out = [];
+  source.forEach(function (u) {
+    if (seen[u.username]) return;
+    seen[u.username] = true;
+    out.push(u);
+  });
+  return out;
+}
+
+// Label & warna badge tiap status task (dipakai di list Open & tidak dipakai di log
+// karena log cuma tampilkan yang sudah 'Selesai').
+function statusPillClass_(status) {
+  if (status === 'Open') return 'pill-pend';
+  if (status === 'Sedang Dicari') return 'pill-disc';
+  if (status === 'Menunggu Konfirmasi') return 'pill-pend';
+  return 'pill-hit';
+}
+
+// v8.10.0: label TAMPILAN saja -- nilai yang tersimpan di kolom Status_Task tetap 'Open'
+// (tidak diubah, supaya tidak perlu migrasi data & semua perbandingan status di kode lain
+// tetap jalan apa adanya). Cuma teks yang ditunjukkan ke user yang diganti jadi 'Verifikasi'.
+function statusDisplayLabel_(status) {
+  return status === 'Open' ? 'Verifikasi' : status;
+}
+
+// v8.10.0: parser bukti transaksi WMS (Move/Picking) yang di-paste user saat menutup task
+// dengan kategori bukan 'Salah Hitung'. Output SELALU 15 kolom urut tetap (sesuai
+// LOG_BUKTI_HEADERS di server, setelah 5 kolom konteks): No, STORERKEY, TRANTYPE, SKU,
+// DESCRIPTION, SKUGROUP, LOT, FROMLOC, FROMID, TOLOC, TOID, SOURCEKEY, QTY, ADDDATE, ADDWHO.
+// v8.20.0: TIDAK PERLU baris header lagi -- semua baris yang di-paste dianggap data.
+// kolom dipetakan POSISI-nya langsung sesuai BUKTI_FIELD_ORDER_ (urutan export WMS standar).
+// Baris kosong tetap diabaikan. Kolom wajib (trantype/sku/qty) tetap divalidasi per baris.
+const BUKTI_FIELD_ORDER_ = ['no', 'storerkey', 'trantype', 'sku', 'description', 'skugroup', 'lot', 'fromloc', 'fromid', 'toloc', 'toid', 'sourcekey', 'qty', 'adddate', 'addwho'];
+const BUKTI_REQUIRED_FIELDS_ = ['trantype', 'sku', 'qty']; // minimal wajib ketemu -- kolom lain boleh kosong
+
+function parseBuktiPasteText_(rawText) {
+  const lines = String(rawText || '').split(/\r?\n/).map(function (l) {
+    return l.trim();
+  }).filter(function (l) { return l; });
+  if (!lines.length) throw new Error('Data yang di-paste kosong. Paste langsung baris data dari WMS (tanpa header), dipisah tab.');
+
+  const rows = lines.map(function (line) {
+    const cells = line.split('\t');
+    return BUKTI_FIELD_ORDER_.map(function (field, idx) {
+      return cells[idx] !== undefined ? cells[idx].trim() : '';
+    });
+  });
+
+  const requiredIdx = BUKTI_REQUIRED_FIELDS_.map(function (f) { return BUKTI_FIELD_ORDER_.indexOf(f); });
+  const badRowNum = rows.findIndex(function (row) { return requiredIdx.some(function (idx) { return !row[idx]; }); }) + 1;
+  if (badRowNum) {
+    throw new Error('Baris ke-' + badRowNum + ' tidak lengkap (kolom TRANTYPE/SKU/QTY wajib terisi). Pastikan urutan kolom sesuai: No, STORERKEY, TRANTYPE, SKU, Description, SKUGROUP, LOT, FROMLOC, FROMID, TOLOC, TOID, SOURCEKEY, QTY, ADDDATE, ADDWHO -- dipisah tab, TANPA baris header.');
+  }
+  return rows;
+}
+
+// ---------- Bagian C: Multi-select Task + Floating Action Bar ----------
+// Catatan: ini murni UI (checkbox + export client-side dari data yang sudah dimuat).
+// TIDAK ada google.script.run baru dan TIDAK ada aksi bulk yang menulis ke server dari sini.
+// Untuk aksi bulk beneran (mis. tutup banyak task sekaligus ke spreadsheet), lihat
+// rekomendasi backend di akhir ringkasan Bagian C -- sengaja tidak diimplementasikan.
+let selectedTaskIds = new Set();
+let selectedTasksData = {};
+
+function toggleTaskSelection(id, checked, taskObj) {
+  if (checked) { selectedTaskIds.add(id); selectedTasksData[id] = taskObj; }
+  else { selectedTaskIds.delete(id); delete selectedTasksData[id]; }
+  updateFloatingActionBar();
+}
+
+function clearTaskSelection() {
+  selectedTaskIds = new Set();
+  selectedTasksData = {};
+  document.querySelectorAll('.task-select-cb').forEach(function (cb) {
+    cb.checked = false;
+    const item = cb.closest('.task-item');
+    if (item) item.classList.remove('task-selected');
+  });
+  updateFloatingActionBar();
+}
+
+function updateFloatingActionBar() {
+  const bar = el('floatingActionBar');
+  const countEl = el('fabCount');
+  if (!bar || !countEl) return;
+  const n = selectedTaskIds.size;
+  countEl.textContent = n + (n === 1 ? ' task dipilih' : ' task dipilih');
+  bar.classList.toggle('show', n > 0);
+}
+
+function exportSelectedTasks() {
+  if (!selectedTaskIds.size) return;
+  const rows = Object.keys(selectedTasksData).map(function (id) {
+    const t = selectedTasksData[id];
+    return {
+      Lokasi: t.lokasi,
+      SKU: t.article,
+      Deskripsi: t.description,
+      'Qty Selisih': t.selisih,
+      Tanggal: t.tanggal,
+      Petugas: t.namaPetugas,
+      Status: t.statusTask,
+      'Umur (hari)': t.umurHari,
+      'PIC Investigasi': t.picInvestigasi || '',
+      Validator: t.namaValidator || '',
+      'User Transaksi WMS': t.addWhoTransaksi || ''
+    };
+  });
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.json_to_sheet(rows), 'Task Terpilih');
+  XLSX.writeFile(wb, 'Task_Investigasi_Terpilih_' + rows.length + '.xlsx');
+}
+
+function loadOpenTasks() {
+  google.script.run
+    .withSuccessHandler(function (tasks) {
+      const card = el('openTaskCard');
+      const listEl = el('openTaskList');
+      const emptyEl = el('openTaskEmpty');
+      listEl.innerHTML = '';
+      el('openTaskCount').textContent = tasks.length;
+      if (el('openTaskSearch')) el('openTaskSearch').value = '';
+      // Bagian C: list di-rebuild -- checkbox lama sudah tidak ada di DOM, jadi reset seleksi.
+      clearTaskSelection();
+
+      if (!tasks.length) {
+        card.classList.add('hidden');
+        emptyEl.textContent = 'Tidak ada task investigasi yang terbuka. 🎉';
+        return;
+      }
+      emptyEl.textContent = '';
+
+      const formData = investigasiFormDataCache || { kategoriList: [], mapping: [], allUsers: [], statusFlow: ['Open', 'Sedang Dicari', 'Menunggu Konfirmasi', 'Selesai'], slaHari: 1 };
+      const kategoriList = formData.kategoriList || [];
+      const statusFlow = formData.statusFlow || ['Open', 'Sedang Dicari', 'Menunggu Konfirmasi', 'Selesai'];
+
+      tasks.forEach(function (t) {
+        const wrap = document.createElement('div');
+        wrap.className = 'task-item';
+        // FASE 6b: dipakai filterOpenTaskList() untuk cari tanpa re-render (form di dalamnya
+        // jangan sampai kehapus/reset kalau lagi diisi user).
+        wrap.dataset.search = (t.lokasi + ' ' + t.article + ' ' + t.description + ' ' + t.namaPetugas + ' ' + (t.picInvestigasi || '') + ' ' + (t.namaValidator || '') + ' ' + (t.addWhoTransaksi || '') + ' ' + t.statusTask).toLowerCase();
+
+        const agingBadge = t.isCritical
+          ? '<span class="pill pill-disc">🔴 Critical - ' + t.umurHari + ' hari</span>'
+          : '<span class="pill pill-pend">' + t.umurHari + ' hari</span>';
+
+        const row = document.createElement('div');
+        row.className = 'det-row';
+        row.style.borderBottom = 'none';
+        row.style.padding = '0';
+        row.style.flex = '1';
+        row.style.minWidth = '0';
+        row.innerHTML =
+          '<div><div class="det-loc">' + escapeHtml(t.lokasi) + ' &; ' + escapeHtml(t.article) + '</div>' +
+          '<div class="det-sub">' + escapeHtml(t.description) + '</div>' +
+          '<div class="det-sub">👤 User Cycle: ' + escapeHtml(t.namaPetugas) + ' &middot; ' + escapeHtml(t.tanggal) +
+          (t.namaValidator ? '<div class="det-sub">👤 Validator: ' + escapeHtml(t.namaValidator) + '</div>' : '') +
+          (t.addWhoTransaksi ? renderAddWhoBreakdown_(t.addWhoTransaksi) : '') +
+          '</div>' +
+          '<div class="det-sub">Status: ' + escapeHtml(statusDisplayLabel_(t.statusTask)) + ' &middot; ' + t.umurHari + ' Hari</div>' +
+          '<div style="margin-top:6px; display:flex; gap:6px; flex-wrap:wrap;">' +
+          '<span class="pill ' + statusPillClass_(t.statusTask) + '">' + escapeHtml(statusDisplayLabel_(t.statusTask)) + '</span>' +
+          agingBadge +
+          '</div></div>' +
+          '<span class="pill pill-disc">' + (t.selisih > 0 ? '+' : '') + t.selisih + '</span>';
+
+        // Bagian C: checkbox multi-select -- murni UI, tidak memicu google.script.run apapun.
+        const rowWrap = document.createElement('div');
+        rowWrap.style.display = 'flex';
+        rowWrap.style.alignItems = 'flex-start';
+        rowWrap.style.gap = '10px';
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.className = 'task-select-cb';
+        cb.title = 'Pilih task ini';
+        cb.addEventListener('change', function () {
+          wrap.classList.toggle('task-selected', cb.checked);
+          toggleTaskSelection(t.id, cb.checked, t);
+        });
+        rowWrap.appendChild(cb);
+        rowWrap.appendChild(row);
+
+        const form = document.createElement('div');
+        form.className = 'task-close-form';
+
+        const currentIdx = statusFlow.indexOf(t.statusTask);
+        const nextStatuses = statusFlow.slice(currentIdx + 1);
+        const statusOptionsHtml = nextStatuses.map(function (s) {
+          return '<option value="' + escapeHtml(s) + '"' + (s === 'Selesai' ? ' selected' : '') + '>' + (s === 'Selesai' ? 'Tandai Selesai' : 'Update ke: ' + escapeHtml(statusDisplayLabel_(s))) + '</option>';
+        }).join('');
+
+        const kategoriOptionsHtml = '<option value="">-- Belum diketahui --</option>' +
+          kategoriList.map(function (k) {
+            const sel = (t.kategori === k) ? ' selected' : '';
+            return '<option value="' + escapeHtml(k) + '"' + sel + '>' + escapeHtml(k) + '</option>';
+          }).join('');
+
+        form.innerHTML =
+          '<label style="margin:0 0 4px;">Update Status</label>' +
+          '<select class="sel-status">' + statusOptionsHtml + '</select>' +
+          '<label style="margin:10px 0 4px;">Kategori Selisih (wajib kalau Tandai Selesai)</label>' +
+          '<select class="sel-kategori">' + kategoriOptionsHtml + '</select>' +
+          '<label style="margin:10px 0 4px;">User PIC (wajib kalau Tandai Selesai)</label>' +
+          '<select class="sel-pic"><option value="">-- Pilih User PIC --</option></select>' +
+          '<textarea rows="2" style="margin-top:10px;" placeholder="Catatan progres (wajib) -- contoh: sudah cek lokasi B02.031.4, belum ketemu, lanjut cek lokasi sebelah..."></textarea>' +
+          '<div class="bukti-wrap hidden" style="margin-top:10px;">' +
+          '<label class="bukti-label" style="margin:0 0 4px;">Bukti Transaksi WMS (Move/Picking) -- wajib, kecuali kategori Salah Hitung / Barang Sudah di Picking</label>' +
+          '<textarea class="ta-bukti" rows="4" style="font-family:monospace; font-size:11.5px;" placeholder="Paste data dari WMS di sini (langsung baris data, TANPA baris header, dipisah tab)&#10;Urutan kolom: No STORERKEY TRANTYPE SKU Description SKUGROUP LOT FROMLOC FROMID TOLOC TOID SOURCEKEY QTY ADDDATE ADDWHO"></textarea>' +
+          '<div class="class hint bukti-hint" style="margin-top:4px;">Total Qty baris MOVE/PICKING dengan SKU ini harus sama persis dengan selisih task (<b class="bukti-selisih-hint"></b>), dan harus ada nomor lokasi (FROMLOC/TOLOC).</div>' +
+          '</div>' +
+          '<button class="task-close-btn">Simpan</button>' +
+          '<div class="status-msg"></div>';
+
+        form.querySelector('.bukti-selisih-hint').textContent = Math.abs(t.selisih);
+
+        const selStatus = form.querySelector('.sel-status');
+        selStatus.innerHTML = statusOptionsHtml;
+
+        const selKategori = form.querySelector('.sel-kategori');
+        selKategori.innerHTML = kategoriOptionsHtml;
+
+        const selPic = form.querySelector('.sel-pic');
+        const textarea = form.querySelector('textarea');
+        const buktiWrap = form.querySelector('.bukti-wrap');
+        const taBukti = form.querySelector('.ta-bukti');
+        const btn = form.querySelector('.task-close-btn');
+        const statusMsg = form.querySelector('.status-msg');
+
+        function refreshPicOptions() {
+          const kategori = selKategori.value;
+
+          // v8.7: kalau kategori = 'Salah Hitung', sudah jelas validator-nya yang salah
+          // hitung saat blind recount -- dropdown PIC dikunci & di-auto-set ke nama
+          // validator (bukan dipilih manual lagi). Selain itu perilaku lama tetap.
+          if (kategori === 'Salah Hitung' && t.namaValidator) {
+            selPic.innerHTML = '<option value="' + escapeHtml(t.namaValidator) + '" selected>' + escapeHtml(t.namaValidator) + ' (Validator)</option>';
+            selPic.disabled = true;
+            return;
+          }
+          selPic.disabled = false;
+
+          const options = kategori ? picOptionsForKategori_(kategori) : (formData.allUsers || []);
+          let html = '<option value="">-- Pilih User PIC --</option>';
+          let currentIncluded = false;
+          options.forEach(function (u) {
+            const sel = (u.username === t.picInvestigasi) ? ' selected' : '';
+            if (sel) currentIncluded = true;
+            html += '<option value="' + escapeHtml(u.username) + '"' + sel + '>' + escapeHtml(u.username) + (u.role ? ' (' + escapeHtml(u.role) + ')' : '') + '</option>';
+          });
+          if (t.picInvestigasi && !currentIncluded) {
+            html += '<option value="' + escapeHtml(t.picInvestigasi) + '" selected>' + escapeHtml(t.picInvestigasi) + ' (saat ini)</option>';
+          }
+          selPic.innerHTML = html;
+        }
+        refreshPicOptions();
+        selKategori.addEventListener('change', refreshPicOptions);
+
+        function updateButtonLabel() {
+          const target = selStatus.value;
+          btn.textContent = target === 'Selesai' ? 'Tandai Selesai' : 'Simpan Update';
+        }
+        selStatus.addEventListener('change', updateButtonLabel);
+        updateButtonLabel();
+
+        // v8.10.0: kotak paste bukti transaksi WMS cuma muncul (dan wajib diisi) kalau
+        // target status = Selesai DAN kategori dipilih selain 'Salah Hitung'.
+        const buktiLabelEl = form.querySelector('.bukti-label');
+        const buktiHintEl = form.querySelector('.bukti-hint');
+        function updateBuktiVisibility() {
+          const needsBukti = selStatus.value === 'Selesai' && selKategori.value && KATEGORI_TANPA_BUKTI_.indexOf(selKategori.value) === -1;
+          buktiWrap.classList.toggle('hidden', !needsBukti);
+          if (needsBukti && KATEGORI_ADJUSTMENT_.indexOf(selKategori.value) !== -1) {
+            buktiLabelEl.textContent = 'Bukti Transaksi WMS (Adjustment) - wajib';
+            buktiHintEl.innerHTML = 'Jenis transaksi harus ADJUSTMENT, qty HARUS sesuai tanda (' +
+              (selKategori.value === 'Adjustment Minus' ? 'negatif, misal -' : 'positif, misal +') +
+              Math.abs(t.selisih) + '), dan TOLOC harus lokasi task ini (' + escapeHtml(t.lokasi) + ') -- Adjustment tidak punya FROMLOC.';
+          } else if (needsBukti) {
+            buktiLabelEl.textContent = 'Bukti Transaksi WMS (Move/Picking) - wajib, kecuali kategori Salah Hitung / Barang Sudah di Picking';
+            buktiHintEl.innerHTML = 'Total Qty baris MOVE/PICKING dengan SKU ini harus sama persis dengan selisih task (<b class="bukti-selisih-hint">' + Math.abs(t.selisih) + '</b>), dan harus ada nomor lokasi (FROMLOC/TOLOC).';
+          }
+        }
+        selStatus.addEventListener('change', updateBuktiVisibility);
+        selKategori.addEventListener('change', updateBuktiVisibility);
+        updateBuktiVisibility();
+
+        // v8.20: shortcut "Barang Sudah di Picking" -- begitu kategori ini dipilih, auto-isi
+        // status Selesai + catatan default + PIC (bukti transaksi di-skip, lihat
+        // KATEGORI_TANPA_BUKTI_), lalu langsung trigger simpan supaya task auto-close tanpa
+        // user perlu klik tombol Simpan lagi.
+        selKategori.addEventListener('change', function () {
+          if (selKategori.value !== 'Barang Sudah di Picking') return;
+          selStatus.value = 'Selesai';
+          updateButtonLabel();
+          updateBuktiVisibility();
+          if (!textarea.value.trim()) {
+            textarea.value = 'Barang sudah di picking -- discrepancy terkonfirmasi, task ditutup otomatis.';
+          }
+          if (!selPic.value) {
+            const opsiPic = picOptionsForKategori_('Barang Sudah di Picking');
+            if (opsiPic.length) selPic.value = opsiPic[0].username;
+            else if (currentUser && currentUser.username) selPic.value = currentUser.username;
+          }
+          btn.click();
+        });
+
+        btn.addEventListener('click', function () {
+          const targetStatus = selStatus.value;
+          const kategori = selKategori.value;
+          const picUsername = selPic.value;
+          const catatan = textarea.value.trim();
+          const isFinal = targetStatus === 'Selesai';
+
+          if (!catatan) {
+            statusMsg.textContent = 'Catatan progres wajib diisi.';
+            statusMsg.className = 'status-msg status-err';
+            return;
+          }
+          if (isFinal && !kategori) {
+            statusMsg.textContent = 'Kategori selisih wajib dipilih untuk menutup task.';
+            statusMsg.className = 'status-msg status-err';
+            return;
+          }
+          if (isFinal && !picUsername) {
+            statusMsg.textContent = 'User PIC wajib dipilih untuk menutup task.';
+            statusMsg.className = 'status-msg status-err';
+            return;
+          }
+
+          // v8.10.0: bukti transaksi WMS wajib di-parse di client dulu (feedback instan
+          // kalau formatnya salah), server tetap validasi ulang (jangan percaya client saja).
+          let buktiRows = null;
+          if (isFinal && kategori && KATEGORI_TANPA_BUKTI_.indexOf(kategori) === -1) {
+            const rawBukti = taBukti.value.trim();
+            if (!rawBukti) {
+              statusMsg.textContent = 'Bukti transaksi WMS wajib di-paste untuk menutup task ini (kecuali kategori Salah Hitung / Barang Sudah di Picking).';
+              statusMsg.className = 'status-msg status-err';
+              return;
+            }
+            try {
+              buktiRows = parseBuktiPasteText_(rawBukti);
+            } catch (err) {
+              statusMsg.textContent = err.message;
+              statusMsg.className = 'status-msg status-err';
+              return;
+            }
+          }
+
+          const originalBtnText = btn.textContent;
+          btn.disabled = true;
+          btn.textContent = 'Menyimpan...';
+          statusMsg.textContent = '';
+
+          google.script.run
+            .withSuccessHandler(function (res) {
+              if (res.success) {
+                if (isFinal) {
+                  wrap.remove();
+                  // Bagian C: kalau task yang ditutup lagi ke-select, keluarkan dari seleksi.
+                  selectedTaskIds.delete(t.id);
+                  delete selectedTasksData[t.id];
+                  updateFloatingActionBar();
+                  riwayatLogLoaded = false; // invalidate -- refetch nanti begitu section-nya dibuka lagi di Dashboard
+                  const remaining = listEl.children.length;
+                  el('openTaskCount').textContent = remaining;
+                  if (!remaining) {
+                    card.classList.add('hidden');
+                    emptyEl.textContent = 'Tidak ada task investigasi yang terbuka. 🎉';
+                  }
+                } else {
+                  // status maju tapi belum final -> refresh list supaya badge status/opsi lanjutan update
+                  loadOpenTasks();
+                }
+              } else {
+                btn.disabled = false;
+                btn.textContent = originalBtnText;
+                statusMsg.textContent = res.message;
+                statusMsg.className = 'status-msg status-err';
+              }
+            })
+            .withFailureHandler(function (err) {
+              btn.disabled = false;
+              btn.textContent = originalBtnText;
+              statusMsg.textContent = 'Gagal: ' + err.message;
+              statusMsg.className = 'status-msg status-err';
+            })
+            .updateTaskStatus(t.id, currentUser.username, targetStatus, catatan, kategori, picUsername, buktiRows, t.lokasi, t.article, t.selisih);
+        });
+
+        wrap.appendChild(rowWrap);
+        wrap.appendChild(form);
+        listEl.appendChild(wrap);
+      });
+      card.classList.remove('hidden');
+    })
+    .withFailureHandler(onServerError_)
+    .getOpenTasks(currentUser.username);
+}
+
+// FASE 6b: filter TANPA re-render (cuma toggle display) -- task-item punya form isian
+// yang sedang dikerjakan user, jadi tidak boleh dibongkar ulang cuma karena user ngetik
+// di search box.
+function filterOpenTaskList() {
+  const q = el('openTaskSearch').value.trim().toLowerCase();
+  const items = el('openTaskList').querySelectorAll('.task-item');
+  let visibleCount = 0;
+  items.forEach(function (item) {
+    const match = !q || (item.dataset.search || '').indexOf(q) !== -1;
+    item.style.display = match ? '' : 'none';
+    if (match) visibleCount++;
+  });
+  const emptyEl = el('openTaskEmpty');
+  emptyEl.textContent = (q && visibleCount === 0) ? 'Tidak ada task yang cocok dengan pencarian.' : '';
+}
+
+// v8.20: Riwayat Log sekarang tinggal di Dashboard, collapsed secara default -- baru dimuat
+// dari server begitu user pertama kali klik header-nya (buka).
+// riwayatLogLoaded dipakai
+// supaya tidak query berulang tiap toggle, dan di-invalidate (false lagi) tiap ada task yang
+// baru ditutup supaya data ke-refresh begitu section-nya dibuka lagi.
+let riwayatLogLoaded = false;
+
+function toggleRiwayatLog() {
+  const body = el('riwayatLogBody');
+  const chevron = el('riwayatLogChevron');
+  const willOpen = body.classList.contains('hidden');
+  body.classList.toggle('hidden', !willOpen);
+  chevron.classList.toggle('open', willOpen);
+  chevron.textContent = willOpen ? '▲' : '▼';
+  if (willOpen && !el('riwayatLogFrom').value) {
+    const today = new Date();
+    const from = new Date(today.getTime() - 30 * 86400000);
+    const toIso = function (d) { return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0'); };
+    el('riwayatLogFrom').value = toIso(from);
+    el('riwayatLogTo').value = toIso(today);
+  }
+  if (willOpen && !riwayatLogLoaded) loadTaskLog();
+}
+
+function loadTaskLog() {
+  const listEl = el('taskLogList');
+  const emptyEl = el('taskLogEmpty');
+  const isDesktop = document.body.classList.contains('workspace-desktop');
+  google.script.run
+    .withSuccessHandler(function (logs) {
+      riwayatLogLoaded = true;
+      listEl.innerHTML = '';
+      if (!logs.length) { emptyEl.textContent = 'Tidak ada log untuk periode ini.'; return; }
+      emptyEl.textContent = '';
+      if (isDesktop) {
+        const head = document.createElement('div');
+        head.className = 'riwayat-log-row riwayat-log-row-head';
+        head.innerHTML = '<span>Tanggal</span><span>Lokasi</span>' +
+          '<span>SKU / Deskripsi</span><span>Selisih</span>' +
+          '<span>Kategori / PIC</span><span>Ditutup Oleh</span>' +
+          '<span>Catatan</span>';
+        listEl.appendChild(head);
+      }
+      logs.forEach(function (l) {
+        const row = document.createElement('div');
+        if (isDesktop) {
+          row.className = 'riwayat-log-row';
+          row.innerHTML =
+            '<div>' + escapeHtml(l.waktuSelesai) + '</div>' +
+            '<div>' + escapeHtml(l.lokasi) + '</div>' +
+            '<div>' + escapeHtml(l.article) + ' <div class="riwayat-log-cell-sub">' + escapeHtml(l.description || '') + '</div></div>' +
+            '<div>' + escapeHtml(l.selisih) + '</div>' +
+            '<div>' + escapeHtml(l.kategori || l.alasan) + (l.picUsername ? '<div class="riwayat-log-cell-sub">PIC: ' + escapeHtml(l.picUsername) + '</div>' : '') + '</div>' +
+            '<div>' + escapeHtml(l.diselesaikanOleh) + '</div>' +
+            '<div class="riwayat-log-cell-note">' + escapeHtml(l.catatan) + '</div>';
+        } else {
+          row.className = 'det-row';
+          row.innerHTML =
+            '<div><div class="det-loc">' + escapeHtml(l.lokasi) + ' &middot; ' + escapeHtml(l.article) + '</div>' +
+            '<div class="det-sub">' + escapeHtml(l.kategori || l.alasan) +
+            (l.picUsername ? ' &middot; PIC: ' + escapeHtml(l.picUsername) : '') + '</div>' +
+            (l.namaValidator ? '<div class="det-sub">👤 Validator: ' + escapeHtml(l.namaValidator) + '</div>' : '') +
+            (l.addWhoTransaksi ? renderAddWhoBreakdown_(l.addWhoTransaksi) : '') +
+            '<div class="det-sub">Ditutup oleh ' + escapeHtml(l.diselesaikanOleh) + ' (' + escapeHtml(l.waktuSelesai) + ')</div>' +
+            '<div class="det-sub" style="white-space:pre-line;">📝 ' + escapeHtml(l.catatan) + '</div></div>' +
+            '<span class="pill pill-hit">Selesai</span>';
+        }
+        listEl.appendChild(row);
+      });
+    })
+    .withFailureHandler(onServerError_)
+    .getTaskLog(300, currentUser.username, el('riwayatLogFrom').value, el('riwayatLogTo').value);
+}
+
+// v8.7: toggle antara panel Ranking Akurasi (petugas) & Ranking Validator, style tombol
+// Pakai pola yang sama dengan setSummaryMode (Harian/Bulanan) -- className '' = aktif,
+// 'secondary' = tidak aktif.
+function setLeaderboardTab(tab) {
+  el('btnLbTabPetugas').className = tab === 'petugas' ? '' : 'secondary';
+  el('btnLbTabValidator').className = tab === 'validator' ? '' : 'secondary';
+  el('lbPanelPetugas').classList.toggle('hidden', tab !== 'petugas');
+  el('lbPanelValidator').classList.toggle('hidden', tab !== 'validator');
+}
+
+function renderLeaderboardValidator(list) {
+  const lvList = el('leaderboardValidatorList');
+  const empty = el('leaderboardValidatorEmpty');
+  lvList.innerHTML = '';
+  if (!list || !list.length) {
+    empty.textContent = 'Belum ada item yang task investigasinya selesai pada periode ini.';
+    return;
+  }
+  empty.textContent = '';
+  list.forEach(function (p, idx) {
+    const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1) + '.';
+    const row = document.createElement('div');
+    row.className = 'lb-row';
+    row.innerHTML =
+      '<div><span style="margin-right:8px;">' + medal + '</span>' +
+      '<span class="lb-name">' + escapeHtml(p.nama) + '</span>' +
+      '<div class="lb-sub">' + p.hit + ' benar dari ' + p.total + ' item (final) &middot; ' + p.persenDiscrepancy + '% salah hitung</div>' +
+      '</div>' +
+      '<div class="lb-pct" style="color:' + (p.akurasi >= 99 ? 'var(--green)' : 'var(--red)') + ';">' + p.akurasi + '%</div>';
+    lvList.appendChild(row);
+  });
+}
+
+function renderSummary(res) {
+  lastDashboardExport.leaderboard = res.leaderboard || [];
+  renderLeaderboardValidator(res.leaderboardValidator || []);
+  const lbCard = el('leaderboardCard');
+  const detCard = el('detailCard');
+  const empty = el('summaryEmpty');
+  const kpiRow = el('kpiRow');
+
+  if (!res.kpi || res.kpi.total === 0) {
+    lbCard.classList.add('hidden');
+    detCard.classList.add('hidden');
+    kpiRow.classList.add('hidden');
+    el('btnExportExcel').classList.add('hidden');
+    empty.textContent = summaryMode === 'daily' ? 'Belum ada data count untuk tanggal ini.' : 'Belum ada data count untuk bulan ini.';
+    return;
+  }
+  empty.textContent = '';
+  el('btnExportExcel').classList.remove('hidden');
+
+  const akurasiKpi = res.kpi.total ? Math.round((res.kpi.hit / res.kpi.total) * 1000) / 10 : 0;
+  el('kpiAkurasi').textContent = akurasiKpi + '%';
+  el('kpiTotal').textContent = res.kpi.total;
+  el('kpiHit').textContent = res.kpi.hit;
+  el('kpiDisc').textContent = res.kpi.discrepancy;
+  kpiRow.classList.remove('hidden');
+
+  const lbList = el('leaderboardList');
+  lbList.innerHTML = '';
+  if (res.leaderboard.length) {
+    res.leaderboard.forEach(function (p, idx) {
+      const medal = idx === 0 ? '🥇' : idx === 1 ? '🥈' : idx === 2 ? '🥉' : (idx + 1) + '.';
+      const row = document.createElement('div');
+      row.className = 'lb-row clickable';
+      row.innerHTML =
+        '<div><span style="margin-right:8px;">' + medal + '</span>' +
+        '<span class="lb-name">' + escapeHtml(p.nama) + '</span>' +
+        '<div class="lb-sub">' + p.hit + ' benar dari ' + p.total + ' item (final) &middot; ' + p.persenDiscrepancy + '% discrepancy</div>' +
+        '</div>' +
+        '<div class="lb-pct" style="color:' + (p.akurasi >= 99 ? 'var(--green)' : 'var(--red)') + ';">' + p.akurasi + '%</div>';
+      row.addEventListener('click', function () { showUserDetail(p.nama); });
+      lbList.appendChild(row);
+    });
+  }
+  if (res.leaderboard.length || (res.leaderboardValidator && res.leaderboardValidator.length)) {
+    lbCard.classList.remove('hidden');
+  } else {
+    lbCard.classList.add('hidden');
+  }
+
+  // Fase 22: 'details' tidak lagi dibundel di sini -- kartu ditampilkan (biar kelihatan ada
+  // isinya) tapi kontennya baru diambil kalau tombol "Muat Detail Item" diklik.
+  detCard.classList.remove('hidden');
+  resetProblemItemsDetail_();
+}
+
+// FASE 6b: cache detail terakhir + render function terpisah supaya bisa dipakai ulang
+// oleh filterDetailList() tanpa query ulang ke server (filter murni client-side).
+let lastDetailData = [];
+
+/**
+ * Fase 22: reset tampilan "Detail Item Bermasalah" ke state awal (tombol "Muat Detail Item"
+ * belum diklik) -- dipanggil tiap kali summary di-render ulang (ganti tanggal/bulan), supaya
+ * detail lama punya periode SEBELUMNYA tidak ketampil seolah-olah punya periode SEKARANG.
+ */
+function resetProblemItemsDetail_() {
+  lastDetailData = [];
+  el('detailLoadPrompt').classList.remove('hidden');
+  el('detailLoadedWrap').classList.add('hidden');
+}
+
+function loadProblemItemsDetail_() {
+  const periodValue = summaryMode === 'daily' ? el('summaryDate').value : el('summaryMonth').value;
+  if (!periodValue) return;
+  const btn = el('detailLoadPrompt').querySelector('button');
+  btn.disabled = true;
+  btn.textContent = 'Memuat...';
+  google.script.run
+    .withSuccessHandler(function (items) {
+      btn.disabled = false;
+      btn.textContent = '📥 Muat Detail Item';
+      lastDetailData = items || [];
+      el('detailLoadPrompt').classList.add('hidden');
+      el('detailLoadedWrap').classList.remove('hidden');
+      el('detailSearch').value = '';
+      renderDetailRows(lastDetailData);
+    })
+    .withFailureHandler(function (err) {
+      btn.disabled = false;
+      btn.textContent = '📥 Muat Detail Item';
+      onServerError_(err);
+    })
+    .getProblemItemsDetail(summaryMode, periodValue, currentUser.username);
+}
+
+function renderDetailRows(list) {
+  const detList = el('detailList');
+  const emptyEl = el('detailEmpty');
+  detList.innerHTML = '';
+
+  if (!list.length) {
+    emptyEl.textContent = lastDetailData.length ? 'Tidak ada item yang cocok dengan pencarian.' : 'Tidak ada detail item untuk periode ini.';
+    return;
+  }
+  emptyEl.textContent = '';
+
+  list.forEach(function (d) {
+    const row = document.createElement('div');
+    row.className = 'problem-row';
+    let statusPillClass = 'pill-pend';
+    if (d.status.indexOf('Verifikasi') !== -1) statusPillClass = 'pill-disc';
+    else if (d.status.indexOf('Selesai') !== -1) statusPillClass = 'pill-hit';
+
+    const qtyText = (d.selisih === '' || d.selisih === null || d.selisih === undefined) ? '-' : (d.selisih > 0 ? '+' + d.selisih : d.selisih);
+    row.innerHTML =
+      '<span class="p-cell p-lokasi">' + escapeHtml(d.lokasi) + '</span>' +
+      '<span class="p-cell p-sku" data-label="SKU">' + escapeHtml(d.article) + '</span>' +
+      '<span class="p-cell p-desc" data-label="Deskripsi">' + escapeHtml(d.description) + '</span>' +
+      '<span class="p-cell p-qty" data-label="Qty Discrepancy">' + qtyText + '</span>' +
+      '<span class="p-cell p-user" data-label="User">' + escapeHtml(d.namaPetugas) + '</span>' +
+      '<span class="p-cell p-status" data-label="Status"><span class="pill ' + statusPillClass + '">' + escapeHtml(d.status) + '</span></span>';
+    detList.appendChild(row);
+  });
+}
+
+function filterDetailList() {
+  const q = el('detailSearch').value.trim().toLowerCase();
+  if (!q) { renderDetailRows(lastDetailData); return; }
+  const filtered = lastDetailData.filter(function (d) {
+    return (String(d.lokasi || '').toLowerCase().indexOf(q) !== -1) ||
+      (String(d.article || '').toLowerCase().indexOf(q) !== -1) ||
+      (String(d.description || '').toLowerCase().indexOf(q) !== -1) ||
+      (String(d.namaPetugas || '').toLowerCase().indexOf(q) !== -1) ||
+      (String(d.status || '').toLowerCase().indexOf(q) !== -1);
+  });
+  renderDetailRows(filtered);
+}
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str === null || str === undefined ? '' : String(str);
+  return div.innerHTML;
+}
+
+// Parse string AddWho_Transaksi format baru 'MOVE:a,b;PICKING:c' jadi object per jenis.
+// Kompatibel juga dengan format lama (flat, tanpa prefix jenis) -- masuk ke 'lainnya'
+// supaya data lama yang sudah kepalang tersimpan tetap terbaca, bukan hilang.
+function parseAddWhoByType_(str) {
+  const s = String(str || '').trim();
+  const result = { move: [], picking: [], lainnya: [] };
+  if (!s) return result;
+  if (/(MOVE|PICKING|LAINNYA):/i.test(s)) {
+    s.split(';').forEach(function (part) {
+      const idx = part.indexOf(':');
+      if (idx === -1) return;
+      const type = part.substring(0, idx).trim().toLowerCase();
+      const names = part.substring(idx + 1).split(',').map(function (x) { return x.trim(); }).filter(function (x) { return x; });
+      if (result[type]) result[type] = result[type].concat(names);
+    });
+  } else {
+    result.lainnya = s.split(',').map(function (x) { return x.trim(); }).filter(function (x) { return x; });
+  }
+  return result;
+}
+
+// Render baris "Transaksi Terakhir MOVE : 👤 ..." / "Transaksi Terakhir PICKING : 👤 ..." dari
+// AddWho_Transaksi. Baris cuma muncul kalau jenis itu memang ada datanya.
+function renderAddWhoBreakdown_(str) {
+  const byType = parseAddWhoByType_(str);
+  const lines = [];
+  if (byType.move.length) lines.push('<div class="det-sub">Transaksi Terakhir MOVE : 👤 ' + byType.move.map(escapeHtml).join(', 👤 ') + '</div>');
+  if (byType.picking.length) lines.push('<div class="det-sub">Transaksi Terakhir PICKING : 👤 ' + byType.picking.map(escapeHtml).join(', 👤 ') + '</div>');
+  if (byType.lainnya.length) lines.push('<div class="det-sub">🚚 User transaksi WMS : ' + byType.lainnya.map(escapeHtml).join(', ') + '</div>');
+  return lines.join('');
+}
+
+// ---------- v8.21: Penyelesaian Plus Minus (pairing lintas lokasi) ----------
+
+// Layar ini memasangkan 1 task Minus + 1 task Plus (SKU & qty sama persis, biasanya
+// beda lokasi) lalu menutup KEDUANYA sekaligus dengan 1 bukti MOVE dari WMS yang
+// menghubungkan kedua lokasi tab -- lihat closePlusMinusPair di TaskInvestigasi.gs.
+
+let pmData_ = { minus: [], plus: [] };
+let pmSelected_ = { minus: null, plus: null };
+
+function bukaPenyelesaianPlusMinus() {
+  if (!requireLogin_(['inventory', 'admin'])) return;
+  showScreen('screenPlusMinusClose');
+  pmSelected_ = { minus: null, plus: null };
+  google.script.run
+    .withSuccessHandler(function (data) {
+      investigasiFormDataCache = data;
+      loadPlusMinusCandidates();
+    })
+    .withFailureHandler(function (err) {
+      onServerError_(err);
+      investigasiFormDataCache = investigasiFormDataCache || { kategoriList: [], mapping: [], allUsers: [] };
+      loadPlusMinusCandidates();
+    })
+    .getInvestigasiFormData(currentUser.username);
+}
+
+function loadPlusMinusCandidates() {
+  pmSelected_ = { minus: null, plus: null };
+  el('pmcFormCard').classList.add('hidden');
+  google.script.run
+    .withSuccessHandler(function (data) {
+      pmData_ = data || { minus: [], plus: [] };
+      renderPmCandidateList_('minus');
+      renderPmCandidateList_('plus');
+    })
+    .withFailureHandler(onServerError_)
+    .getPlusMinusCandidates(currentUser.username);
+}
+
+function renderPmCandidateList_(side) {
+  const tasks = pmData_[side] || [];
+  const listEl = el(side === 'minus' ? 'pmcMinusList' : 'pmcPlusList');
+  const emptyEl = el(side === 'minus' ? 'pmcMinusEmpty' : 'pmcPlusEmpty');
+  const searchEl = el(side === 'minus' ? 'pmcMinusSearch' : 'pmcPlusSearch');
+  if (searchEl) searchEl.value = '';
+  listEl.innerHTML = '';
+  if (!tasks.length) {
+    emptyEl.textContent = side === 'minus' ? 'Tidak ada task Minus yang terbuka.' : 'Tidak ada task Plus yang terbuka.';
+    return;
+  }
+  emptyEl.textContent = '';
+
+  tasks.forEach(function (t) {
+    const item = document.createElement('div');
+    item.className = 'task-item';
+    item.dataset.search = (t.lokasi + ' ' + t.article + ' ' + t.description).toLowerCase();
+    item.style.cursor = 'pointer';
+    item.innerHTML =
+      '<div class="det-row" style="border-bottom:none; padding:0;">' +
+      '<div><div class="det-loc">' + escapeHtml(t.lokasi) + ' &middot; ' + escapeHtml(t.article) + '</div>' +
+      '<div class="det-sub">' + escapeHtml(t.description) + '</div>' +
+      '<div class="det-sub">Status : ' + escapeHtml(statusDisplayLabel_(t.statusTask)) + ' &middot; ' + t.umurHari + ' hari</div>' +
+      '</div>' +
+      '<span class="pill pill-disc">' + (t.selisih > 0 ? '+' : '') + t.selisih + '</span>' +
+      '</div>';
+
+    item.addEventListener('click', function () {
+      listEl.querySelectorAll('.task-item').forEach(function (el2) { el2.classList.remove('task-selected'); });
+      item.classList.add('task-selected');
+      pmSelected_[side] = t;
+      updatePmPairState_();
+    });
+    listEl.appendChild(item);
+  });
+}
+
+function filterPlusMinusCandidateList_(side) {
+  const searchEl = el(side === 'minus' ? 'pmcMinusSearch' : 'pmcPlusSearch');
+  const listEl = el(side === 'minus' ? 'pmcMinusList' : 'pmcPlusList');
+  const emptyEl = el(side === 'minus' ? 'pmcMinusEmpty' : 'pmcPlusEmpty');
+  const q = searchEl.value.trim().toLowerCase();
+  let visibleCount = 0;
+  listEl.querySelectorAll('.task-item').forEach(function (item) {
+    const match = !q || (item.dataset.search || '').indexOf(q) !== -1;
+    item.style.display = match ? '' : 'none';
+    if (match) visibleCount++;
+  });
+  emptyEl.textContent = (q && visibleCount === 0) ? 'Tidak ada task yang cocok dengan pencarian.' : '';
+}
+
+function updatePmPairState_() {
+  const formCard = el('pmcFormCard');
+  const summaryEl = el('pmcPairSummary');
+  const btn = el('pmcBtnClose');
+  const mTask = pmSelected_.minus, pTask = pmSelected_.plus;
+
+  if (!mTask || !pTask) {
+    formCard.classList.add('hidden');
+    return;
+  }
+
+  const sameSku = String(mTask.article).trim().toUpperCase() === String(pTask.article).trim().toUpperCase();
+  const qtyMatch = Math.abs(mTask.selisih) === Math.abs(pTask.selisih);
+
+  formCard.classList.remove('hidden');
+  if (!sameSku || !qtyMatch) {
+    summaryEl.innerHTML = '⚠️ Task belum cocok untuk dipasangkan: ' +
+      (!sameSku ? 'SKU berbeda (' + escapeHtml(mTask.article) + ' vs ' + escapeHtml(pTask.article) + '). ' : '') +
+      (!qtyMatch ? 'Qty harus sama persis (Minus: ' + Math.abs(mTask.selisih) + ', Plus: ' + Math.abs(pTask.selisih) + '). ' : '');
+    btn.disabled = true;
+    return;
+  }
+
+  summaryEl.innerHTML = '✅ ' + escapeHtml(mTask.article) + ' - ' +
+    escapeHtml(mTask.description) + '<br>' +
+    'Minus ' + Math.abs(mTask.selisih) + ' di <b>' + escapeHtml(mTask.lokasi) + '</b> &nbsp;&nbsp;&nbsp; Plus ' + Math.abs(pTask.selisih) + ' di <b>' + escapeHtml(pTask.lokasi) + '</b>' +
+    '<br><span style="font-size:11.5px;">Bukti MOVE wajib: FROMLOC=' + escapeHtml(mTask.lokasi) + ', TOLOC=' + escapeHtml(pTask.lokasi) + ', Qty=' + Math.abs(mTask.selisih) + '.</span>';
+  btn.disabled = false;
+
+  const selPic = el('pmcSelPic');
+  const options = (investigasiFormDataCache && investigasiFormDataCache.allUsers) || [];
+  let html = '<option value="">-- Pilih User PIC --</option>';
+  options.forEach(function (u) {
+    html += '<option value="' + escapeHtml(u.username) + '">' + escapeHtml(u.username) + (u.role ? ' (' + escapeHtml(u.role) + ')' : '') + '</option>';
+  });
+  selPic.innerHTML = html;
+}
+
+el('pmcBtnClose').addEventListener('click', function () {
+  const btn = el('pmcBtnClose');
+  const statusMsg = el('pmcStatusMsg');
+  const mTask = pmSelected_.minus, pTask = pmSelected_.plus;
+  const catatan = el('pmcCatatan').value.trim();
+  const picUsername = el('pmcSelPic').value;
+  const rawBukti = el('pmcTaBukti').value.trim();
+
+  statusMsg.textContent = '';
+  statusMsg.className = 'status-msg';
+  if (!mTask || !pTask) { statusMsg.textContent = 'Pilih task Minus & Plus dulu.'; statusMsg.className = 'status-msg status-err'; return; }
+  if (!catatan) { statusMsg.textContent = 'Catatan penyelesaian wajib diisi.'; statusMsg.className = 'status-msg status-err'; return; }
+  if (!picUsername) { statusMsg.textContent = 'User PIC wajib dipilih.'; statusMsg.className = 'status-msg status-err'; return; }
+  if (!rawBukti) { statusMsg.textContent = 'Bukti transaksi MOVE wajib di-paste.'; statusMsg.className = 'status-msg status-err'; return; }
+
+  let buktiRows;
+  try {
+    buktiRows = parseBuktiPasteText_(rawBukti);
+  } catch (err) {
+    statusMsg.textContent = err.message;
+    statusMsg.className = 'status-msg status-err';
+    return;
+  }
+
+  const originalText = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Menyimpan...';
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (res.success) {
+        statusMsg.textContent = '';
+        el('pmcCatatan').value = '';
+        el('pmcTaBukti').value = '';
+        riwayatLogLoaded = false;
+        loadPlusMinusCandidates();
+      } else {
+        btn.disabled = false;
+        btn.textContent = originalText;
+        statusMsg.textContent = res.message;
+        statusMsg.className = 'status-msg status-err';
+      }
+    })
+    .withFailureHandler(function (err) {
+      btn.disabled = false;
+      btn.textContent = originalText;
+      statusMsg.textContent = 'Gagal: ' + err.message;
+      statusMsg.className = 'status-msg status-err';
+    })
+    .closePlusMinusPair(mTask.id, pTask.id, currentUser.username, catatan, picUsername, buktiRows);
+});
+</script>

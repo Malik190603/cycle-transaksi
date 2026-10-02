@@ -1,0 +1,505 @@
+<script>
+// =========================================================================
+// JsFacilityManagement.html
+// v8.26.0 -- JavaScript untuk UI Facility Management
+// Semua fungsi ini berinteraksi dengan backend di FacilityManagement.gs
+// lewat google.script.run.
+// =========================================================================
+
+let daftarFacilityCache_ = [];
+let facilityIdSedangDiAssign_ = null;
+
+// =========================================================================
+// LOAD DAFTAR FACILITY
+// =========================================================================
+
+function loadDaftarFacility() {
+  el('daftarFacilityRows').innerHTML = '';
+  el('daftarFacilityEmpty').textContent = 'Memuat daftar facility...';
+  el('facilityStatus').textContent = '';
+  el('facilityStatus').className = 'status-msg';
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res.success) {
+        el('daftarFacilityEmpty').textContent = '';
+        el('facilityStatus').textContent = res.message;
+        el('facilityStatus').className = 'status-msg status-err';
+        return;
+      }
+      daftarFacilityCache_ = res.facilities || [];
+      renderDaftarFacility_(res.facilities);
+    })
+    .withFailureHandler(function (err) {
+      el('daftarFacilityEmpty').textContent = '';
+      el('facilityStatus').textContent = 'Gagal memuat: ' + err.message;
+      el('facilityStatus').className = 'status-msg status-err';
+    })
+    .getDaftarFacility(currentUser.username);
+}
+
+function renderDaftarFacility_(facilities) {
+  if (!facilities || !facilities.length) {
+    el('daftarFacilityRows').innerHTML = '';
+    el('daftarFacilityEmpty').textContent = 'Belum ada facility. Silakan buat facility pertama di atas.';
+    return;
+  }
+
+  el('daftarFacilityEmpty').textContent = '';
+  el('daftarFacilityRows').innerHTML = facilities.map(function (f) {
+    const isAktif = f.status === 'Aktif';
+    const badgeClass = isAktif ? 'config-badge-on' : 'config-badge-off';
+    const toggleLabel = isAktif ? 'Nonaktifkan' : 'Aktifkan';
+    const toggleIcon = isAktif ? '🔴' : '🟢';
+    // v8.29.1: Bangun URL langsung dari spreadsheetId (bukan dari field url yang bisa
+    // berisi URL akrip/share yang tidak bisa dibuka biasa). Ini menghindari error
+    // "Sorry, unable to open the file" yang terjadi ketika URL tersimpan = URL script runner.
+    const directUrl = f.spreadsheetId
+      ? 'https://docs.google.com/spreadsheets/d/' + encodeURIComponent(f.spreadsheetId) + '/edit'
+      : (f.url || null);
+    return '' +
+      '<tr>' +
+        '<td><strong>' + escapeHtml(f.nama) + '</strong></td>' +
+        '<td>' + escapeHtml(f.kode) + '</td>' +
+        '<td><span class="' + badgeClass + '">' + f.status + '</span></td>' +
+        '<td>' + escapeHtml(f.tanggalDibuat || '-') + '</td>' +
+        '<td>' + (directUrl ? '<a href="' + escapeHtml(directUrl) + '" target="_blank" rel="noopener" class="link" style="font-size:12px;">Buka Database ↗</a>' : '-') + '</td>' +
+        '<td class="config-actions">' +
+          '<button class="config-icon-btn" title="Ubah Nama/Kode" onclick="promptUbahNamaFacility(\'' + escapeJs_(f.id) + '\', \'' + escapeJs_(f.nama) + '\', \'' + escapeJs_(f.kode) + '\')">✏️</button>' +
+          '<button class="config-icon-btn" title="' + toggleLabel + '" onclick="setStatusFacility(\'' + escapeJs_(f.id) + '\', \'' + escapeJs_(f.nama) + '\', \'' + escapeJs_(f.status) + '\')">' + toggleIcon + '</button>' +
+          '<button class="config-icon-btn" title="Assign User" onclick="bukaModalAssignUser(\'' + escapeJs_(f.id) + '\', \'' + escapeJs_(f.nama) + '\')">👤</button>' +
+          '<button class="config-icon-btn" title="Kelola Lokasi Aktif" onclick="bukaKelolaLokasi(\'' + escapeJs_(f.id) + '\', \'' + escapeJs_(f.nama) + '\')">📍</button>' +
+        '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+// =========================================================================
+// TOGGLE MODE IMPORT LOKASI
+// =========================================================================
+
+function toggleLokasiImportMode_() {
+  const mode = document.querySelector('input[name="lokasiMode"]:checked').value;
+  el('lokasiModeUpload').classList.toggle('hidden', mode !== 'upload');
+  el('lokasiModeCopy').classList.toggle('hidden', mode !== 'copy');
+  el('lokasiModePaste').classList.toggle('hidden', mode !== 'paste');
+}
+
+// =========================================================================
+// LOAD DAFTAR FACILITY SUMBER (UNTUK OPSI COPY)
+// =========================================================================
+
+function loadDaftarFacilitySumber_() {
+  const select = el('selectFacilitySumber');
+  if (!select) return;
+  select.innerHTML = '<option value="">-- Pilih Facility Sumber --</option>';
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res.success || !res.facilities) return;
+      res.facilities.forEach(function (f) {
+        if (f.status === 'Aktif') {
+          const opt = document.createElement('option');
+          opt.value = f.id;
+          opt.textContent = f.nama + ' (' + f.kode + ')';
+          select.appendChild(opt);
+        }
+      });
+    })
+    .withFailureHandler(function () { /* abaikan, select tetap kosong */ })
+    .getDaftarFacility(currentUser.username);
+}
+
+// =========================================================================
+// FACILITY SWITCHER DEVELOPER (v8.26.2)
+// =========================================================================
+// Dropdown ini TIDAK mengubah assignment permanen -- cuma override sementara
+// (cache 6 jam di server, lihat setDeveloperActiveFacility() di FacilityManagement.gs)
+// supaya Developer bisa intip/kelola data facility manapun tanpa perlu
+// manual tiap ganti facility.
+
+function muatDaftarFacilitySwitcherDeveloper_() {
+  const select = el('devFacilitySwitcher');
+  if (!select) return;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res.success || !res.facilities) {
+        select.innerHTML = '<option value="">Gagal memuat facility</option>';
+        return;
+      }
+      const opsi = ['<option value="">-- Assignment normal saya --</option>'];
+      res.facilities.forEach(function (f) {
+        if (f.status === 'Aktif') {
+          const selected = (currentUser.facilityId === f.id) ? ' selected' : '';
+          opsi.push('<option value="' + escapeJs_(f.id) + '"' + selected + '>' + escapeHtml(f.nama) + ' (' + escapeHtml(f.kode) + ')</option>');
+        }
+      });
+      select.innerHTML = opsi.join('');
+    })
+    .withFailureHandler(function () {
+      select.innerHTML = '<option value="">Gagal memuat facility</option>';
+    })
+    .getDaftarFacility(currentUser.username);
+}
+
+function gantiFacilityAktifDeveloper_(facilityId) {
+  const select = el('devFacilitySwitcher');
+  if (select) select.disabled = true;
+  showTopLoadingBar_('Mengambil data facility...');
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (select) select.disabled = false;
+      if (!res.success) {
+        hideTopLoadingBar_();
+        alert('Gagal pindah facility: ' + res.message);
+        muatDaftarFacilitySwitcherDeveloper_(); // reset dropdown ke state sebelumnya
+        return;
+      }
+      // Refresh currentUser (facilityId/facilityName ikut berubah) lalu render ulang Home.
+      google.script.run
+        .withSuccessHandler(function (info) {
+          hideTopLoadingBar_();
+          if (!info) return;
+          currentUser.facilityId = info.facilityId || null;
+          currentUser.facilityName = info.facilityName || null;
+          currentUser.facilityCode = info.facilityCode || null;
+          currentUser.facilityStatus = info.facilityStatus || null;
+          currentUser.facilityUrl = info.facilityUrl || null;
+          setupHomeScreen();
+        })
+        .withFailureHandler(function () { hideTopLoadingBar_(); /* abaikan, pilih facility tetap yg lama */ })
+        .getUserRole(currentUser.username);
+    })
+    .withFailureHandler(function (err) {
+      if (select) select.disabled = false;
+      hideTopLoadingBar_();
+      alert('Gagal pindah facility: ' + err.message);
+      muatDaftarFacilitySwitcherDeveloper_();
+    })
+    .setDeveloperActiveFacility(currentUser.username, facilityId);
+}
+
+function tambahFacilityBaru_() {
+  const nama = el('inputFacilityNama').value.trim();
+  const kode = el('inputFacilityKode').value.trim();
+  const namaSs = el('inputFacilityNamaSs').value.trim();
+
+  if (!nama) { alert('Nama Facility belum diisi.'); return; }
+  if (!kode) { alert('Kode Facility belum diisi.'); return; }
+  if (!namaSs) { alert('Nama Spreadsheet belum diisi.'); return; }
+
+  const mode = document.querySelector('input[name="lokasiMode"]:checked').value;
+
+  el('btnTambahFacility').disabled = true;
+  el('facilityStatus').textContent = 'Memproses...';
+  el('facilityStatus').className = 'status-msg';
+
+  // Ambil daftar lokasi berdasarkan mode yang dipilih
+  ambilDaftarLokasiBerdasarkanMode_(mode, function (err, daftarLokasi) {
+    if (err) {
+      el('btnTambahFacility').disabled = false;
+      el('facilityStatus').textContent = err;
+      el('facilityStatus').className = 'status-msg status-err';
+      return;
+    }
+
+    if (!daftarLokasi || daftarLokasi.length === 0) {
+      el('btnTambahFacility').disabled = false;
+      el('facilityStatus').textContent = 'Daftar lokasi aktif tidak boleh kosong. Minimal 1 lokasi.';
+      el('facilityStatus').className = 'status-msg status-err';
+      return;
+    }
+
+    // Submit ke backend
+    const jobId = makeJobId_();
+    showRingOverlay_('Membuat facility baru...');
+    startRingPolling_(jobId, 'getImportProgress', 'Membuat facility');
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        hideRingOverlay_();
+        el('btnTambahFacility').disabled = false;
+        el('facilityStatus').textContent = res.message;
+        el('facilityStatus').className = res.success ? 'status-msg status-ok' : 'status-msg status-err';
+        if (res.success) {
+          // Bersihkan form
+          el('inputFacilityNama').value = '';
+          el('inputFacilityKode').value = '';
+          el('inputFacilityNamaSs').value = '';
+          el('fileLokasiAktif').value = '';
+          el('textareaLokasiPaste').value = '';
+          el('selectFacilitySumber').value = '';
+          // Refresh daftar
+          loadDaftarFacility();
+          loadDaftarFacilitySumber_();
+        }
+      })
+      .withFailureHandler(function (err) {
+        hideRingOverlay_();
+        el('btnTambahFacility').disabled = false;
+        el('facilityStatus').textContent = 'Gagal: ' + err.message;
+        el('facilityStatus').className = 'status-msg status-err';
+      })
+      .tambahFacility(currentUser.username, nama, kode, namaSs, daftarLokasi, jobId);
+  });
+}
+
+// =========================================================================
+// AMBIL DAFTAR LOKASI BERDASARKAN MODE
+// =========================================================================
+
+function ambilDaftarLokasiBerdasarkanMode_(mode, callback) {
+  if (mode === 'paste') {
+    // Dari textarea
+    const text = el('textareaLokasiPaste').value || '';
+    const lines = text.split(/\r?\n/).map(function (l) { return l.trim(); }).filter(function (l) { return l; });
+    callback(null, lines);
+    return;
+  }
+
+  if (mode === 'copy') {
+    // Dari facility lain
+    const facId = el('selectFacilitySumber').value;
+    if (!facId) {
+      callback('Pilih facility sumber terlebih dahulu.');
+      return;
+    }
+
+    google.script.run
+      .withSuccessHandler(function (res) {
+        if (!res.success) {
+          callback(res.message || 'Gagal mengambil lokasi dari facility sumber.');
+          return;
+        }
+        callback(null, res.lokasi || []);
+      })
+      .withFailureHandler(function (err) {
+        callback('Gagal mengambil lokasi: ' + err.message);
+      })
+      .getDaftarLokasiAktif(currentUser.username, facId);
+    return;
+  }
+
+  // Mode: upload file
+  const fileInput = el('fileLokasiAktif');
+  if (!fileInput || !fileInput.files || !fileInput.files.length) {
+    callback('Pilih file lokasi aktif (.xlsx / .csv) terlebih dahulu.');
+    return;
+  }
+
+  const file = fileInput.files[0];
+  const reader = new FileReader();
+  reader.onload = function (e) {
+    try {
+      const data = new Uint8Array(e.target.result);
+      const workbook = XLSX.read(data, { type: 'array' });
+      const firstSheetName = workbook.SheetNames[0];
+      const worksheet = workbook.Sheets[firstSheetName];
+      const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+      // Ambil kolom pertama, skip baris pertama kalau sepertinya header
+      const lokasi = [];
+      jsonData.forEach(function (row, idx) {
+        if (!row || !row.length) return;
+        const val = String(row[0] || '').trim();
+        if (!val) return;
+        // Skip baris pertama kalau isinya seperti 'Lokasi' / 'Location' (header)
+        if (idx === 0 && /^lokasi|location/i.test(val)) return;
+        lokasi.push(val);
+      });
+
+      callback(null, lokasi);
+    } catch (err) {
+      callback('Gagal memproses file: ' + err.message);
+    }
+  };
+  reader.onerror = function () {
+    callback('Gagal membaca file.');
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+// =========================================================================
+// UBAH NAMA & KODE FACILITY
+// =========================================================================
+
+function promptUbahNamaFacility_(id, namaLama, kodeLama) {
+  const namaBaru = prompt('Ubah nama facility "' + namaLama + '":', namaLama);
+  if (namaBaru === null) return;
+  const namaTrim = namaBaru.trim();
+  if (!namaTrim) { alert('Nama tidak boleh kosong.'); return; }
+
+  const kodeBaru = prompt('Ubah kode facility (boleh kosong jika tidak ingin diubah):', kodeLama);
+  if (kodeBaru === null) return;
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      alert(res.message);
+      if (res.success) loadDaftarFacility();
+    })
+    .withFailureHandler(function (err) {
+      alert('Gagal: ' + err.message);
+    })
+    .updateNamaFacility(currentUser.username, id, namaTrim, kodeBaru.trim());
+}
+
+// =========================================================================
+// AKTIFKAN / NONAKTIFKAN FACILITY
+// =========================================================================
+
+function setStatusFacility_(id, nama, statusSekarang) {
+  const akanNonaktif = statusSekarang === 'Aktif';
+  const pesan = akanNonaktif
+    ? 'Nonaktifkan facility "' + nama + '"? User yang di-assign ke facility ini akan fallback ke spreadsheet aktif (sistem lama).'
+    : 'Aktifkan kembali facility "' + nama + '"?';
+  if (!confirm(pesan)) return;
+
+  const statusBaru = akanNonaktif ? 'Nonaktif' : 'Aktif';
+  google.script.run
+    .withSuccessHandler(function (res) {
+      alert(res.message);
+      if (res.success) loadDaftarFacility();
+    })
+    .withFailureHandler(function (err) {
+      alert('Gagal: ' + err.message);
+    })
+    .setStatusFacility(currentUser.username, id, statusBaru);
+}
+
+// =========================================================================
+// MODAL: ASSIGN USER KE FACILITY
+// =========================================================================
+
+function bukaModalAssignUser_(facilityId, facilityName) {
+  facilityIdSedangDiAssign_ = facilityId;
+  el('modalAssignFacilityName').textContent = 'Facility: ' + facilityName;
+  el('assignUserStatus').textContent = '';
+  el('assignUserStatus').className = 'status-msg';
+
+  // Load daftar user untuk dropdown
+  google.script.run
+    .withSuccessHandler(function (users) {
+      const select = el('selectUserAssign');
+      select.innerHTML = '<option value="">-- Pilih User --</option>';
+      (users || []).forEach(function (u) {
+        const opt = document.createElement('option');
+        opt.value = u.username;
+        opt.textContent = u.username + ' (' + u.role + ')';
+        select.appendChild(opt);
+      });
+    })
+    .withFailureHandler(function (err) {
+      el('assignUserStatus').textContent = 'Gagal memuat daftar user: ' + err.message;
+      el('assignUserStatus').className = 'status-msg status-err';
+    })
+    .getAssignableUsers(currentUser.username);
+
+  // Load daftar user yang sudah di-assign ke facility ini
+  loadDaftarUserAssignFacility_(facilityId);
+
+  el('modalAssignUser').classList.remove('hidden');
+}
+
+function tutupModalAssignUser_() {
+  el('modalAssignUser').classList.add('hidden');
+  facilityIdSedangDiAssign_ = null;
+}
+
+function submitAssignUser_() {
+  const username = el('selectUserAssign').value;
+  if (!username) { alert('Pilih user terlebih dahulu.'); return; }
+  if (!facilityIdSedangDiAssign_) return;
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      el('assignUserStatus').textContent = res.message;
+      el('assignUserStatus').className = res.success ? 'status-msg status-ok' : 'status-msg status-err';
+      if (res.success) {
+        el('selectUserAssign').value = '';
+        loadDaftarUserAssignFacility_(facilityIdSedangDiAssign_);
+      }
+    })
+    .withFailureHandler(function (err) {
+      el('assignUserStatus').textContent = 'Gagal: ' + err.message;
+      el('assignUserStatus').className = 'status-msg status-err';
+    })
+    .assignUserKeFacility(currentUser.username, username, facilityIdSedangDiAssign_);
+}
+
+function loadDaftarUserAssignFacility_(facilityId) {
+  google.script.run
+    .withSuccessHandler(function (res) {
+      const container = el('daftarUserAssignFacility');
+      if (!res.success || !res.assignments || !res.assignments.length) {
+        container.innerHTML = '<div class="hint" style="margin:0;">Belum ada user yang di-assign ke facility ini.</div>';
+        return;
+      }
+
+      // Filter hanya assignment untuk facility ini
+      const untukFacilityIni = res.assignments.filter(function (a) { return a.facilityId === facilityId; });
+      if (!untukFacilityIni.length) {
+        container.innerHTML = '<div class="hint" style="margin:0;">Belum ada user yang di-assign ke facility ini.</div>';
+        return;
+      }
+
+      container.innerHTML = untukFacilityIni.map(function (a) {
+        return '' +
+          '<div style="display:flex; justify-content:space-between; align-items:center; padding:6px 10px; background:var(--bg); border-radius:6px; margin-bottom:4px;">' +
+            '<span><strong>' + escapeHtml(a.username) + '</strong> <span class="hint" style="margin:0;">' + escapeHtml(a.tanggalDiassign || '') + '</span></span>' +
+          '</div>';
+      }).join('');
+    })
+    .withFailureHandler(function () {
+      el('daftarUserAssignFacility').innerHTML = '<div class="hint" style="margin:0;">Gagal memuat daftar assignment.</div>';
+    })
+    .getDaftarUserFacilityAssignment(currentUser.username);
+}
+
+// =========================================================================
+// KELOLA LOKASI AKTIF (sederhana)
+// =========================================================================
+
+function bukaKelolaLokasi_(facilityId, facilityName) {
+  // Sementara: tampilkan jumlah lokasi dan opsi import ulang
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res.success) {
+        alert(res.message);
+        return;
+      }
+
+      const pesan = 'Facility: ' + facilityName + '\n' +
+        'Jumlah lokasi aktif saat ini: ' + (res.total || 0) + ' lokasi\n\n' +
+        'Untuk mengelola lokasi (import ulang / tambah), gunakan fitur Import Lokasi Aktif yang akan segera tersedia di update berikutnya.\n\n' +
+        'Atau hubungi developer untuk menambahkan fitur manajemen lokasi yang lengkap.';
+      alert(pesan);
+    })
+    .withFailureHandler(function (err) {
+      alert('Gagal membaca daftar lokasi: ' + err.message);
+    })
+    .getDaftarLokasiAktif(currentUser.username, facilityId);
+}
+
+// =========================================================================
+// HELPER: ESCAPE HTML & JS (untuk keamanan saat inject ke innerHTML)
+// =========================================================================
+
+function escapeHtml_(str) {
+  return String(str || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function escapeJs_(str) {
+  return String(str || '')
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/"/g, '\\"')
+    .replace(/\n/g, '\\n')
+    .replace(/\r/g, '\\r');
+}
+</script>

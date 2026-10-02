@@ -1,0 +1,31 @@
+/* Tambahan tampilan khusus APK (jembatan). Memakai variabel warna dari Style.html. */
+:root { --sat: var(--safe-area-inset-top, env(safe-area-inset-top, 0px)); --sab: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px)); }
+.titlebar { height: calc(44px + var(--sat)); padding-top: var(--sat); }
+.app-shell { margin-top: calc(44px + var(--sat)); min-height: calc(100vh - 44px - var(--sat)); }
+body { padding-bottom: calc(50px + var(--sab)); }
+html.ct-native .traffic-lights { display: none; }
+html.ct-native .titlebar-title { margin-right: 0; text-align: left; }
+
+.ct-box { margin-top: 14px; padding: 14px; border: 1px solid var(--border); border-radius: var(--radius-md); background: var(--surface); text-align: left; }
+.ct-box h4 { margin: 0 0 4px; font-size: 14px; font-weight: 700; }
+.ct-box p { margin: 0 0 10px; font-size: 12.5px; color: var(--text-secondary); line-height: 1.45; }
+.ct-box input { width: 100%; }
+.ct-box .ct-row { display: flex; gap: 8px; margin-top: 8px; }
+.ct-box .ct-row button { margin-top: 0; }
+.ct-msg { font-size: 12.5px; margin-top: 8px; min-height: 16px; color: var(--text-secondary); }
+.ct-msg.err { color: var(--red); } .ct-msg.ok { color: var(--green); }
+
+.ct-upd { border-color: var(--primary); background: var(--blue-bg); }
+.ct-upd .ct-notes { font-size: 12.5px; color: var(--text); line-height: 1.5; margin: 6px 0 10px; max-height: 140px; overflow-y: auto; }
+.ct-prog { height: 6px; border-radius: 3px; background: var(--border); overflow: hidden; margin: 8px 0 4px; }
+.ct-prog i { display: block; height: 100%; width: 3%; background: var(--primary); border-radius: 3px; transition: width 200ms var(--ease); }
+.ct-foot { font-size: 11px; color: var(--text-secondary); font-weight: 600; margin-top: 3px; opacity: 0.8; }
+.ct-foot a { color: var(--primary); text-decoration: none; margin-left: 6px; }
+.ct-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--red); margin-left: 6px; vertical-align: middle; }
+
+.ct-toast { position: fixed; left: 50%; bottom: calc(24px + var(--sab)); transform: translateX(-50%); max-width: 88vw; padding: 10px 16px; border-radius: 999px;
+  background: rgba(29,29,31,0.92); color: #fff; font-size: 13px; font-weight: 500; z-index: 200; box-shadow: var(--shadow-card); opacity: 0; transition: opacity 200ms var(--ease); pointer-events: none; text-align: center; }
+.ct-toast.show { opacity: 1; }
+.ct-offline { position: fixed; top: calc(44px + var(--sat)); left: 0; right: 0; z-index: 29; background: var(--orange); color: #fff; font-size: 12px; font-weight: 600; text-align: center; padding: 5px 12px; }
+@media (prefers-reduced-motion: reduce) { .ct-prog i, .ct-toast { transition: none; } }
+.billboard { height: calc(34px + var(--sab)); padding-bottom: var(--sab); }

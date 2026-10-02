@@ -1,0 +1,53 @@
+    </div><!-- /main-pane -->
+  </div><!-- /app-shell -->
+
+  <!-- ===================== LOADER SYSTEM (v8.27) ===================== -->
+  <!-- 1) Spinning Loader -- khusus Login -->
+  <div class="loader-overlay loader-overlay--dim" id="spinnerOverlay">
+    <div class="loader-box">
+      <div class="loader-spinner"></div>
+      <div class="loader-text" id="spinnerOverlayText">Memeriksa akun...</div>
+    </div>
+  </div>
+
+  <!-- 2) Pulsing Loader -- khusus Submit Count (Cycle/Validasi) -->
+  <div class="loader-overlay loader-overlay--light" id="pulseOverlay">
+    <div class="loader-box">
+      <div class="loader-pulse-wrap">
+        <div class="loader-pulse-ring"></div>
+        <div class="loader-pulse-ring ring-2"></div>
+        <div class="loader-pulse-dot"></div>
+      </div>
+      <div class="loader-text" id="pulseOverlayText">Menyimpan hasil hitung...</div>
+    </div>
+  </div>
+
+  <!-- 3) Thin Top Loading Bar -- khusus Pergantian Facility -->
+  <div class="loader-overlay loader-overlay--invisible" id="topBarOverlay"></div>
+  <div class="top-loading-bar" id="topLoadingBar"></div>
+  <div class="top-loading-bar-text" id="topLoadingBarText"></div>
+
+  <!-- 4) Circular Progress Ring (dengan persentase) -- khusus Import Data (Upload Admin)
+       & Facility Management (Tambah Facility Baru) -->
+  <div class="loader-overlay loader-overlay--dim" id="ringOverlay">
+    <div class="loader-box">
+      <div class="loader-ring-wrap">
+        <svg class="loader-ring-svg" viewBox="0 0 64 64">
+          <circle class="loader-ring-track" cx="32" cy="32" r="28"></circle>
+          <circle class="loader-ring-fill" id="ringProgressCircle" cx="32" cy="32" r="28"></circle>
+        </svg>
+        <div class="loader-ring-pct" id="ringOverlayPct">0%</div>
+      </div>
+      <div class="loader-text" id="ringOverlayText">Memproses...</div>
+    </div>
+  </div>
+
+  <div class="floating-action-bar" id="floatingActionBar">
+    <span class="fab-count" id="fabCount">0 dipilih</span>
+    <button type="button" class="fab-btn ghost" onclick="clearTaskSelection()">✖ Batal</button>
+    <button type="button" class="fab-btn primary" onclick="exportSelectedTasks()">⬇️ Export Terpilih</button>
+  </div>
+
+  <div class="billboard">
+    <div class="billboard-track" id="billboardTrack"></div>
+  </div>

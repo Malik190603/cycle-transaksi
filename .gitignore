@@ -1,0 +1,8 @@
+node_modules/
+www/
+*.apk
+*.zip
+latest.json
+release-notes.md
+icon-preview.png
+test/.tmp/

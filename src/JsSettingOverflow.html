@@ -1,0 +1,400 @@
+<script>
+// ---------- Config Hub (v8.26.0 Tahap 2) ----------
+// Akses menu ini BUKAN berbasis role (admin/storing/dst) tapi berbasis
+// daftar NIK di
+// sheet Config_Akses_Setting (lihat isNikPunyaAksesSetting_ di
+// OverflowConfig.gs).
+// currentUser.aksesSettingOverflow diisi server saat login (getUserRole di
+// MasterData.gs) -- jadi NIK yang tidak terdaftar TIDAK akan pernah lihat
+// menu ini.
+
+let configTabAktif_ = 'user';
+let matrixState_ = [];
+let roleValidGlobal_ = [];
+let grupAlatListGlobal_ = [];
+
+function bukaConfigHub() {
+  if (!currentUser) { showScreen('screenLogin'); return; }
+  // v8.26.1: Developer = super user, selalu boleh buka Config Hub walau
+  // NIK-nya belum
+  // terdaftar di Config_Akses_Setting.
+  if (!currentUser.aksesSettingOverflow && currentUser.role !== 'developer') {
+    alert('Menu ini tidak tersedia untuk akun Anda.');
+    showScreen('screenHome');
+    return;
+  }
+  showScreen('screenConfigHub');
+  gantiTabConfig_('user');
+}
+
+function gantiTabConfig_(tab) {
+  configTabAktif_ = tab;
+  document.querySelectorAll('.config-tab').forEach(function (b) { b.classList.toggle('active', b.dataset.tab === tab); });
+  ['user', 'tugas', 'akses', 'facility'].forEach(function (t) {
+    el('configPanel' + capitalizeTab_(t)).classList.toggle('hidden', t !== tab);
+  });
+  if (tab === 'user') loadKelolaUser();
+  else if (tab === 'tugas') { loadPembagianTugas(); loadLogPerubahan(); }
+  else if (tab === 'akses') loadAksesSetting();
+  else if (tab === 'facility') {
+    // v8.26.1: form "Tambah Facility Baru" hanya untuk role Developer.
+    // Admin (atau NIK lain
+    // yang punya akses Config Hub) tetap bisa lihat & kelola daftar
+    // facility yang sudah ada,
+    // tapi tidak bisa membuat facility baru.
+    el('cardTambahFacilityBaru').classList.toggle('hidden', currentUser.role !== 'developer');
+    loadDaftarFacility();
+    loadDaftarFacilitySumber_();
+  }
+}
+
+function capitalizeTab_(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+function refreshConfigTabAktif_() {
+  gantiTabConfig_(configTabAktif_);
+}
+
+// ---------- Manajemen User ----------
+
+function loadKelolaUser() {
+  el('daftarUserRows').innerHTML = '';
+  el('daftarUserEmpty').textContent = 'Memuat...';
+  el('kelolaUserStatus').textContent = '';
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res.success) {
+        el('daftarUserEmpty').textContent = '';
+        el('kelolaUserStatus').textContent = res.message;
+        el('kelolaUserStatus').className = 'status-msg status-err';
+        return;
+      }
+      renderDaftarUser_(res.users, res.roleValid);
+    })
+    .withFailureHandler(function (err) {
+      el('daftarUserEmpty').textContent = '';
+      el('kelolaUserStatus').textContent = 'Gagal memuat: ' + err.message;
+      el('kelolaUserStatus').className = 'status-msg status-err';
+    })
+    .getDaftarUserMaster(currentUser.username);
+}
+
+function renderDaftarUser_(users, roleValid) {
+  if (!users.length) {
+    el('daftarUserRows').innerHTML = '';
+    el('daftarUserEmpty').textContent = 'Belum ada user.';
+    return;
+  }
+  el('daftarUserEmpty').textContent = '';
+  el('daftarUserRows').innerHTML = users.map(function (u) {
+    const roleOptions = roleValid.map(function (r) {
+      return '<option value="' + r + '"' + (r === u.role.toLowerCase() ? ' selected' : '') + '>' + r + '</option>';
+    }).join('');
+    const nonaktif = u.status === 'Nonaktif';
+    return '' +
+      '<tr>' +
+        '<td><strong>' + escapeHtml_(u.username) + '</strong></td>' +
+        '<td><select id="roleUser_' + u.rowIndex + '" class="config-inline-select">' + roleOptions + '</select></td>' +
+        '<td><span class="' + (nonaktif ? 'config-badge-off' : 'config-badge-on') + '">' + u.status + '</span></td>' +
+        '<td class="config-actions">' +
+          '<button class="config-icon-btn" title="Simpan Role" onclick="simpanRoleUser(' + u.rowIndex + ', \'' + escapeJs_(u.username) + '\')">💾</button>' +
+          '<button class="config-icon-btn" title="' + (nonaktif ? 'Aktifkan' : 'Nonaktifkan') + '" onclick="toggleStatusUser(' + u.rowIndex + ', \'' + escapeJs_(u.username) + '\', \'' + u.status + '\')">' + (nonaktif ? '🟢' : '🔴') + '</button>' +
+        '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+function tambahUser() {
+  const nik = el('inputUserBaruNik').value.trim();
+  const role = el('inputUserBaruRole').value;
+  if (!nik) { alert('NIK/Username belum diisi.'); return; }
+
+  el('btnTambahUser').disabled = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      el('btnTambahUser').disabled = false;
+      el('kelolaUserStatus').textContent = res.message;
+      el('kelolaUserStatus').className = res.success ? 'status-msg status-ok' : 'status-msg status-err';
+      if (res.success) { el('inputUserBaruNik').value = ''; loadKelolaUser(); }
+    })
+    .withFailureHandler(function (err) {
+      el('btnTambahUser').disabled = false;
+      el('kelolaUserStatus').textContent = 'Gagal: ' + err.message;
+      el('kelolaUserStatus').className = 'status-msg status-err';
+    })
+    .tambahUserMaster(currentUser.username, nik, role);
+}
+
+function simpanRoleUser(rowIndex, username) {
+  const role = el('roleUser_' + rowIndex).value;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      el('kelolaUserStatus').textContent = res.message;
+      el('kelolaUserStatus').className = res.success ? 'status-msg status-ok' : 'status-msg status-err';
+      if (res.success) loadKelolaUser();
+    })
+    .withFailureHandler(function (err) {
+      el('kelolaUserStatus').textContent = 'Gagal: ' + err.message;
+      el('kelolaUserStatus').className = 'status-msg status-err';
+    })
+    .updateRoleUserMaster(currentUser.username, rowIndex, username, role);
+}
+
+function toggleStatusUser(rowIndex, username, statusSekarang) {
+  const statusBaru = statusSekarang === 'Nonaktif' ? 'Aktif' : 'Nonaktif';
+  const pesanKonfirmasi = statusBaru === 'Nonaktif'
+    ? 'Nonaktifkan ' + username + '? User ini tidak akan bisa login lagi (riwayat tugas lama tetap aman).'
+    : 'Aktifkan kembali ' + username + '?';
+  if (!confirm(pesanKonfirmasi)) return;
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      el('kelolaUserStatus').textContent = res.message;
+      el('kelolaUserStatus').className = res.success ? 'status-msg status-ok' : 'status-msg status-err';
+      if (res.success) loadKelolaUser();
+    })
+    .withFailureHandler(function (err) {
+      el('kelolaUserStatus').textContent = 'Gagal: ' + err.message;
+      el('kelolaUserStatus').className = 'status-msg status-err';
+    })
+    .setStatusUserMaster(currentUser.username, rowIndex, username, statusBaru);
+}
+
+// ---------- Pembagian Tugas (v8.26.0 Tahap 3 -- menggantikan Setting Overflow lama) ----------
+
+function loadPembagianTugas() {
+  el('matrixTugasStatus').textContent = '';
+  el('matrixTugasWarning').classList.add('hidden');
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res.success) {
+        el('modeAssignmentBanner').textContent = res.message;
+        el('modeAssignmentBanner').className = 'config-banner config-banner-warn';
+        return;
+      }
+      matrixState_ = res.matrix;
+      roleValidGlobal_ = res.roleValid;
+      grupAlatListGlobal_ = res.grupAlatList;
+      el('inputMaksGrupAlat').value = res.maksGrupAlat;
+      renderModeBanner_(res.modeAssignment);
+      renderMatrixTable_();
+    })
+    .withFailureHandler(function (err) {
+      el('modeAssignmentBanner').textContent = 'Gagal memuat: ' + err.message;
+      el('modeAssignmentBanner').className = 'config-banner config-banner-warn';
+    })
+    .getLevelAssignmentConfig(currentUser.username);
+}
+
+function renderModeBanner_(mode) {
+  const banner = el('modeAssignmentBanner');
+  if (mode === 'matrix') {
+    banner.className = 'config-banner config-banner-ok';
+    banner.textContent = '✅ Mode Matrix AKTIF -- assignment harian mengikuti pengaturan di bawah ini.';
+    el('btnAktifkanModeMatrix').disabled = true;
+    el('btnKembaliModeLegacy').disabled = false;
+  } else {
+    banner.className = 'config-banner';
+    banner.textContent = 'ℹ️ Mode Lama (By Alat) aktif -- Storing otomatis Reach Truck, role lain otomatis Bawah+Tangga. Matrix di bawah belum berefek sampai mode Matrix diaktifkan.';
+    el('btnAktifkanModeMatrix').disabled = false;
+    el('btnKembaliModeLegacy').disabled = true;
+  }
+}
+
+function cariGrupData_(key) {
+  for (let i = 0; i < matrixState_.length; i++) if (matrixState_[i].grupAlat === key) return matrixState_[i];
+  return null;
+}
+
+function renderMatrixTable_() {
+  const head = '<thead><tr><th>Role</th>' + grupAlatListGlobal_.map(function (g) { return '<th>' + g.label + '</th>'; }).join('') + '</tr></thead>';
+  const body = '<tbody>' + roleValidGlobal_.map(function (role) {
+    const cells = grupAlatListGlobal_.map(function (g) {
+      const grupData = cariGrupData_(g.key);
+      const checked = grupData.roles.indexOf(role) !== -1 ? 'checked' : '';
+      return '<td style="text-align:center;"><input type="checkbox" data-role="' + role + '" data-grup="' + g.key + '" ' + checked + ' onchange="onMatrixCheckboxChange_(this)" /></td>';
+    }).join('');
+    return '<tr><td><strong>' + role + '</strong></td>' + cells + '</tr>';
+  }).join('') + '</tbody>';
+
+  const foot = '<tfoot><tr><td>Mode</td>' + grupAlatListGlobal_.map(function (g) {
+    const grupData = cariGrupData_(g.key);
+    return '<td><select data-grup-mode="' + g.key + '" class="config-inline-select" onchange="onMatrixModeChange_(this)">' +
+      '<option value="pemerataan"' + (grupData.mode === 'pemerataan' ? ' selected' : '') + '>Pemerataan</option>' +
+      '<option value="prioritas"' + (grupData.mode === 'prioritas' ? ' selected' : '') + '>Prioritas</option>' +
+      '</select></td>';
+  }).join('') + '</tr></tfoot>';
+
+  el('matrixTugasTable').innerHTML = head + body + foot;
+}
+
+function onMatrixCheckboxChange_(cb) {
+  const grupData = cariGrupData_(cb.dataset.grup);
+  const idx = grupData.roles.indexOf(cb.dataset.role);
+  if (cb.checked && idx === -1) grupData.roles.push(cb.dataset.role);
+  else if (!cb.checked && idx !== -1) grupData.roles.splice(idx, 1);
+}
+
+function onMatrixModeChange_(sel) {
+  cariGrupData_(sel.dataset.grupMode).mode = sel.value;
+}
+
+function simpanMatrixTugas() {
+  el('btnSimpanMatrix').disabled = true;
+  el('matrixTugasWarning').classList.add('hidden');
+  const maks = Number(el('inputMaksGrupAlat').value) || 2;
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      el('btnSimpanMatrix').disabled = false;
+      el('matrixTugasStatus').textContent = res.message;
+      el('matrixTugasStatus').className = res.success ? 'status-msg status-ok' : 'status-msg status-err';
+      if (res.warning) {
+        el('matrixTugasWarning').textContent = '⚠️ ' + res.warning;
+        el('matrixTugasWarning').classList.remove('hidden');
+      }
+      if (res.success) loadLogPerubahan();
+    })
+    .withFailureHandler(function (err) {
+      el('btnSimpanMatrix').disabled = false;
+      el('matrixTugasStatus').textContent = 'Gagal: ' + err.message;
+      el('matrixTugasStatus').className = 'status-msg status-err';
+    })
+    .saveLevelAssignmentMatrix(currentUser.username, matrixState_, maks);
+}
+
+function gantiModeAssignment(mode) {
+  const pesan = mode === 'matrix'
+    ? 'Aktifkan Mode Matrix? Assignment harian akan langsung mengikuti Pembagian Tugas di bawah ini mulai upload berikutnya.'
+    : 'Kembali ke Mode Lama (By Alat)? Assignment harian balik ke logic Storing/non-Storing seperti sebelumnya. Matrix yang sudah diisi TIDAK hilang, bisa diaktifkan lagi kapan saja.';
+  if (!confirm(pesan)) return;
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      el('matrixTugasStatus').textContent = res.message;
+      el('matrixTugasStatus').className = res.success ? 'status-msg status-ok' : 'status-msg status-err';
+      if (res.success) loadPembagianTugas();
+    })
+    .withFailureHandler(function (err) {
+      el('matrixTugasStatus').textContent = 'Gagal: ' + err.message;
+      el('matrixTugasStatus').className = 'status-msg status-err';
+    })
+    .setModeAssignment(currentUser.username, mode);
+}
+
+function loadLogPerubahan() {
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res.success) return;
+      renderLogPerubahan_(res.log);
+    })
+    .getLogPerubahanConfig(currentUser.username);
+}
+
+function renderLogPerubahan_(log) {
+  if (!log.length) {
+    el('logPerubahanList').innerHTML = '';
+    el('logPerubahanEmpty').textContent = 'Belum ada perubahan.';
+    return;
+  }
+  el('logPerubahanEmpty').textContent = '';
+  el('logPerubahanList').innerHTML = log.map(function (l) {
+    const waktu = l.waktu ? new Date(l.waktu).toLocaleString('id-ID') : '-';
+    return '' +
+      '<div class="config-log-row">' +
+        '<div class="config-log-meta">' + waktu + ' &middot; <strong>' + escapeHtml_(l.nik) + '</strong> &middot; ' + escapeHtml_(l.sumber) + '</div>' +
+        '<div class="config-log-detail">' + escapeHtml_(l.detail) + '</div>' +
+      '</div>';
+  }).join('');
+}
+
+// ---------- Akses Setting ----------
+
+function loadAksesSetting() {
+  el('daftarAksesRows').innerHTML = '';
+  el('daftarAksesEmpty').textContent = 'Memuat...';
+  el('aksesSettingStatus').textContent = '';
+  google.script.run
+    .withSuccessHandler(function (res) {
+      if (!res.success) {
+        el('daftarAksesEmpty').textContent = '';
+        el('aksesSettingStatus').textContent = res.message;
+        el('aksesSettingStatus').className = 'status-msg status-err';
+        return;
+      }
+      renderDaftarAkses_(res.daftar);
+    })
+    .withFailureHandler(function (err) {
+      el('daftarAksesEmpty').textContent = '';
+      el('aksesSettingStatus').textContent = 'Gagal memuat: ' + err.message;
+      el('aksesSettingStatus').className = 'status-msg status-err';
+    })
+    .getDaftarAksesSetting(currentUser.username);
+}
+
+function renderDaftarAkses_(daftar) {
+  if (!daftar.length) {
+    el('daftarAksesRows').innerHTML = '';
+    el('daftarAksesEmpty').textContent = 'Belum ada NIK terdaftar.';
+    return;
+  }
+  el('daftarAksesEmpty').textContent = '';
+  el('daftarAksesRows').innerHTML = daftar.map(function (a) {
+    const isDiriSendiri = a.nik.toLowerCase() === currentUser.username.toLowerCase();
+    return '' +
+      '<tr>' +
+        '<td><strong>' + escapeHtml_(a.nik) + '</strong>' + (isDiriSendiri ? ' <span class="hint" style="margin:0;">(Anda)</span>' : '') + '</td>' +
+        '<td>' + escapeHtml_(a.nama || '-') + '</td>' +
+        '<td>' + escapeHtml_(a.tanggal) + '</td>' +
+        '<td class="config-actions">' + (isDiriSendiri ? '' : '<button class="config-icon-btn" title="Cabut" onclick="hapusAksesUser(' + a.rowIndex + ', \'' + escapeJs_(a.nik) + '\')">🗑️</button>') + '</td>' +
+      '</tr>';
+  }).join('');
+}
+
+function tambahAkses() {
+  const nik = el('inputAksesBaruNik').value.trim();
+  const nama = el('inputAksesBaruNama').value.trim();
+  if (!nik) { alert('NIK belum diisi.'); return; }
+
+  el('btnTambahAkses').disabled = true;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      el('btnTambahAkses').disabled = false;
+      el('aksesSettingStatus').textContent = res.message;
+      el('aksesSettingStatus').className = res.success ? 'status-msg status-ok' : 'status-msg status-err';
+      if (res.success) { el('inputAksesBaruNik').value = ''; el('inputAksesBaruNama').value = ''; loadAksesSetting(); }
+    })
+    .withFailureHandler(function (err) {
+      el('btnTambahAkses').disabled = false;
+      el('aksesSettingStatus').textContent = 'Gagal: ' + err.message;
+      el('aksesSettingStatus').className = 'status-msg status-err';
+    })
+    .tambahAksesSetting(currentUser.username, nik, nama);
+}
+
+function hapusAksesUser(rowIndex, nik) {
+  if (!confirm('Cabut akses Config untuk NIK "' + nik + '"?')) return;
+  google.script.run
+    .withSuccessHandler(function (res) {
+      el('aksesSettingStatus').textContent = res.message;
+      el('aksesSettingStatus').className = res.success ? 'status-msg status-ok' : 'status-msg status-err';
+      if (res.success) loadAksesSetting();
+    })
+    .withFailureHandler(function (err) {
+      el('aksesSettingStatus').textContent = 'Gagal: ' + err.message;
+      el('aksesSettingStatus').className = 'status-msg status-err';
+    })
+    .hapusAksesSetting(currentUser.username, rowIndex, nik);
+}
+
+// ---------- Util ----------
+
+function escapeHtml_(s) {
+  return String(s || '').replace(/[&<>"']/g, function (o) {
+    return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[o];
+  });
+}
+
+function escapeJs_(s) {
+  return String(s || '').replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+}
+</script>

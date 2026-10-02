@@ -1,0 +1,120 @@
+  <!-- SCREEN: Analytics (Accuracy Root Cause) -->
+  <div id="screenAnalytics" class="screen hidden">
+    <div class="screen-refresh-row">
+      <button class="btn-refresh" onclick="refreshCurrentScreen_(this, loadAnalytics_)"><span class="ic-refresh">🔄</span>Refresh</button>
+    </div>
+
+    <div style="margin-bottom:4px;">
+      <div style="font-size:20px; font-weight:800; letter-spacing:-0.3px;">📊 Analytics</div>
+      <div class="hint" style="margin-top:2px;">Identify the Root Cause of Accuracy</div>
+    </div>
+
+    <div class="dash-toolbar" id="anToolbar">
+      <div class="dash-toolbar-fields">
+        <div>
+          <label style="margin:10px 0 4px;">Dari Tanggal</label>
+          <input type="date" id="anDateFrom">
+        </div>
+        <div>
+          <label style="margin:10px 0 4px;">Sampai Tanggal</label>
+          <input type="date" id="anDateTo">
+        </div>
+        <button id="btnAnFilter" onclick="loadAnalytics_()" style="margin-top:0;">🔍 Filter</button>
+      </div>
+      <button type="button" class="filter-collapse-btn" id="btnAnFilterCollapse" onclick="toggleAnFilterCollapse_()" title="Sembunyikan filter">▲</button>
+    </div>
+
+    <div id="anEmpty" class="hint" style="text-align:center; margin-top:16px;"></div>
+
+    <div id="anContent" class="an-grid hidden" style="margin-top:16px;">
+
+      <!-- Overview: Accuracy/Error + Trend + Total Discrepancy -->
+      <div class="card an-full" style="text-align:left; display:flex; gap:16px; flex-wrap:wrap;">
+        <div style="flex:1 1 220px; min-width:220px;">
+          <div style="font-weight:700; font-size:14px; margin-bottom:10px;">Accuracy Overview</div>
+          <div class="an-kpi-row">
+            <div class="an-kpi-card acc">
+              <div class="an-kpi-label">Accuracy</div>
+              <div class="an-kpi-value" id="anAccuracy">0%</div>
+            </div>
+            <div class="an-kpi-card err">
+              <div class="an-kpi-label">Error</div>
+              <div class="an-kpi-value" id="anError">0%</div>
+              <div class="an-kpi-sub" id="anErrorSub">0 SKU discrepancy</div>
+            </div>
+          </div>
+        </div>
+
+        <div style="flex:2 1 300px; min-width:260px;">
+          <div style="font-weight:700; font-size:14px; margin-bottom:2px;">Trend Accuracy</div>
+          <div class="hint" id="anTrendSubtitle" style="margin-top:0; margin-bottom:6px;"></div>
+          <div class="trend-chart-wrap" id="anTrendChartWrap" style="height:150px;">
+            <svg id="anTrendSvg" class="trend-svg" style="height:150px;" viewBox="0 0 700 150"></svg>
+          </div>
+        </div>
+
+        <div style="flex:1 1 160px; min-width:160px; text-align:center; align-self:center;">
+          <div class="an-kpi-label" style="margin-bottom:4px;">Total Discrepancy</div>
+          <div class="an-kpi-value" id="anTotalDiscrepancy" style="color:var(--red); font-size:30px;">0</div>
+          <div class="hint" style="margin-top:0;">Total Item Bermasalah</div>
+        </div>
+      </div>
+
+      <!-- Root Cause Breakdown -->
+      <div class="card" style="text-align:left;">
+        <div style="font-weight:700; font-size:15px; margin-bottom:12px;">Root Cause Breakdown</div>
+        <div class="rc-donut-wrap">
+          <div class="rc-donut" id="rcDonut">
+            <div class="rc-donut-center">
+              <div class="rc-donut-total" id="rcDonutTotal">0</div>
+              <div class="rc-donut-total-label">Total</div>
+            </div>
+          </div>
+          <div class="rc-legend" id="rcLegend"></div>
+        </div>
+      </div>
+
+      <!-- Who is the main contributor -->
+      <div class="card" style="text-align:left;">
+        <div style="font-weight:700; font-size:15px; margin-bottom:10px;">Who is the main contributor?</div>
+        <div class="contrib-tabs">
+          <button type="button" class="contrib-tab active" id="contribTabUserCycle" onclick="setContribTab_('userCycle')">By User Cycle</button>
+          <button type="button" class="contrib-tab" id="contribTabValidator" onclick="setContribTab_('validator')">By Validator</button>
+          <button type="button" class="contrib-tab" id="contribTabOperasional" onclick="setContribTab_('operasional')">Masalah Operasional</button>
+        </div>
+        <div id="contribList"></div>
+        <div id="contribEmpty" class="hint" style="text-align:center;"></div>
+      </div>
+
+      <!-- Detail Root Cause -->
+      <div class="card" style="text-align:left;">
+        <div style="font-weight:700; font-size:15px; margin-bottom:2px;">Detail Root Cause</div>
+        <div class="hint" style="margin-top:0; margin-bottom:12px;">Klik salah satu penyebab untuk melihat detail investigasi.</div>
+        <div class="rc-chip-row" id="rcChipRow"></div>
+        <div id="rcDetailLoading" class="hint" style="text-align:center; padding:10px 0;"></div>
+        <div class="table-scroll-box" id="rcDetailTableWrap" style="max-height:420px;">
+          <table class="err-detail-table rc-detail-table" style="min-width:820px;">
+            <thead>
+              <tr>
+                <th>SKU</th><th>Deskripsi</th><th>Lokasi</th><th>Qty Error</th><th>User Cycle</th>
+                <th>Validator</th><th>User WMS</th><th>Transaksi</th><th>Tanggal</th><th>Hasil Investigasi</th>
+              </tr>
+            </thead>
+            <tbody id="rcDetailTableBody"></tbody>
+          </table>
+        </div>
+        <div id="rcDetailEmpty" class="hint" style="text-align:center; margin-top:8px;"></div>
+        <button type="button" class="secondary hidden" id="btnRcShowMore" onclick="rcShowMore_()" style="margin-top:10px;">Tampilkan lebih banyak</button>
+      </div>
+
+      <!-- Recommended Action -->
+      <div class="card" style="text-align:left;">
+        <div style="font-weight:700; font-size:15px; margin-bottom:10px;">Recommended Action</div>
+        <div class="an-action-list" id="anActionList"></div>
+        <div class="an-insight-box" id="anInsightBox" style="margin-top:12px;"></div>
+      </div>
+
+    </div><!-- /an-grid -->
+
+    <button class="secondary" onclick="showScreen('screenHome')">Kembali</button>
+  </div>

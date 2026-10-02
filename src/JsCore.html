@@ -1,0 +1,406 @@
+<script>
+let currentUser = null;
+let items = [];
+let currentIndex = 0;
+let validasiItems = [];
+let validasiIndex = 0;
+
+function el(id) { return document.getElementById(id); }
+
+// ---------- Desktop Workspace (Bagian A) ----------
+// Preferensi UI murni presentation-layer -- tidak mempengaruhi data/logic apapun.
+// Disimpan di localStorage browser (bukan server), jadi per-device, bukan per-akun.
+let workspaceMode = 'mobile';
+try {
+  workspaceMode = localStorage.getItem('cc_workspaceMode') || (window.innerWidth >= 1440 ? 'desktop' : 'mobile');
+} catch (e) { /* localStorage tidak tersedia -- default mobile, tidak fatal */ }
+
+function applyWorkspaceMode() {
+  const isDesktop = workspaceMode === 'desktop';
+  document.body.classList.toggle('workspace-desktop', isDesktop);
+  const btn = el('btnWorkspaceToggle');
+  if (btn) {
+    btn.textContent = isDesktop ? '🖥️ Desktop Workspace' : '📱 Mobile View';
+    btn.classList.toggle('active', isDesktop);
+  }
+}
+
+function toggleWorkspaceMode() {
+  workspaceMode = workspaceMode === 'desktop' ? 'mobile' : 'desktop';
+  try { localStorage.setItem('cc_workspaceMode', workspaceMode); } catch (e) {}
+  applyWorkspaceMode();
+  redrawTrendChartIfVisible_();
+}
+
+let sidebarCollapsed = false;
+try { sidebarCollapsed = localStorage.getItem('cc_sidebarCollapsed') === '1'; } catch (e) {}
+
+function applySidebarCollapse() {
+  document.body.classList.toggle('sidebar-collapsed', sidebarCollapsed);
+  const btn = el('btnSidebarCollapse');
+  if (btn) btn.title = sidebarCollapsed ? 'Perluas sidebar' : 'Collapse sidebar';
+}
+
+function toggleSidebarCollapse() {
+  sidebarCollapsed = !sidebarCollapsed;
+  try { localStorage.setItem('cc_sidebarCollapsed', sidebarCollapsed ? '1' : '0'); } catch (e) {}
+  applySidebarCollapse();
+  redrawTrendChartIfVisible_();
+}
+
+// ---------- Dark Mode ----------
+// Presentation-layer saja (ganti CSS variable warna), tidak menyentuh data/logic.
+// Default ikut preferensi sistem OS kalau belum pernah di-set manual sebelumnya.
+let darkMode = false;
+try {
+  const saved = localStorage.getItem('cc_darkMode');
+  darkMode = saved !== null ? (saved === '1') : (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches);
+} catch (e) { /* localStorage/matchMedia tidak tersedia -- default light, tidak fatal */ }
+
+function applyDarkMode() {
+  document.documentElement.classList.toggle('dark-mode', darkMode);
+  const btn = el('btnDarkModeToggle');
+  if (btn) {
+    btn.textContent = darkMode ? '☀️' : '🌙';
+    btn.title = darkMode ? 'Mode Terang' : 'Mode Gelap';
+  }
+}
+
+function toggleDarkMode() {
+  darkMode = !darkMode;
+  try { localStorage.setItem('cc_darkMode', darkMode ? '1' : '0'); } catch (e) {}
+  applyDarkMode();
+  redrawTrendChartIfVisible_();
+}
+
+// ---------- Compact Density Mode (Bagian B) ----------
+// Presentation-layer saja: hanya mengubah padding/font row tabel Detail, tidak menyentuh data.
+let densityCompact = false;
+try { densityCompact = localStorage.getItem('cc_densityCompact') === '1'; } catch (e) {}
+
+function applyDensityMode() {
+  const card = el('detailCard');
+  if (card) card.classList.toggle('density-compact', densityCompact);
+  const btn = el('btnDensityToggle');
+  if (btn) btn.classList.toggle('active', densityCompact);
+}
+
+function toggleDensityMode() {
+  densityCompact = !densityCompact;
+  try { localStorage.setItem('cc_densityCompact', densityCompact ? '1' : '0'); } catch (e) {}
+  applyDensityMode();
+}
+
+function toggleFilterCollapse() {
+  const toolbar = el('dashToolbar');
+  const btn = el('btnFilterCollapse');
+  const collapsed = toolbar.classList.toggle('filter-collapsed');
+  btn.textContent = collapsed ? '▼' : '▲';
+  btn.title = collapsed ? 'Tampilkan Filter' : 'Sembunyikan Filter';
+}
+
+function showScreen(id) {
+  ['screenLogin', 'screenHome', 'screenNoTask', 'screenCount',
+   'screenDone', 'screenValidasi', 'screenValidasiDone', 'screenTaskInvestigasi',
+   'screenPlusMinusClose', 'screenAdmin', 'screenSummary',
+   'screenAnalytics', 'screenConfigHub'].forEach(function (s) {
+    el(s).classList.toggle('hidden', s !== id);
+  });
+}
+
+// generic handler: tampilkan error dari server (mis. akses ditolak) sebagai alert
+function onServerError_(err) {
+  alert('Gagal: ' + (err && err.message ? err.message : 'Terjadi kesalahan.'));
+}
+
+// ---------- Login ----------
+
+// FASE UI: loadUserList() dihapus -- sebelumnya menampilkan SEMUA username sebagai
+// dropdown autocomplete di layar login, yang memudahkan orang login sebagai user lain.
+// Sekarang username harus diketik manual. getUserRole(uname) di backend tetap sama
+// persis (tidak diubah) -- validasi username tetap terjadi di server saat submit.
+function doLogin() {
+  const uname = el('loginUsername').value.trim();
+  if (!uname) { el('loginStatus').textContent = 'Isi username dulu.'; return; }
+
+  el('btnLogin').disabled = true;
+  el('btnLogin').textContent = 'Memeriksa...';
+  el('loginStatus').textContent = '';
+  showSpinnerOverlay_('Memeriksa akun ' + uname + '...');
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      el('btnLogin').disabled = false;
+      el('btnLogin').textContent = 'Masuk';
+      hideSpinnerOverlay_();
+      if (!res) {
+        el('loginStatus').textContent = 'Username tidak terdaftar di Master. Cek ejaan atau hubungi admin.';
+        return;
+      }
+      currentUser = {
+        username: res.displayName,
+        role: res.role,
+        aksesSettingOverflow: !!res.aksesSettingOverflow,
+        facilityId: res.facilityId || null,
+        facilityName: res.facilityName || null,
+        facilityCode: res.facilityCode || null,
+        facilityStatus: res.facilityStatus || null,
+        facilityUrl: res.facilityUrl || null
+      };
+      setupHomeScreen();
+    })
+    .withFailureHandler(function (err) {
+      el('btnLogin').disabled = false;
+      el('btnLogin').textContent = 'Masuk';
+      hideSpinnerOverlay_();
+      el('loginStatus').textContent = 'Gagal: ' + err.message;
+    })
+    .getUserRole(uname);
+}
+
+function logout() {
+  currentUser = null;
+  el('loginUsername').value = '';
+  el('sidebarNav').classList.add('hidden');
+  showScreen('screenLogin');
+}
+
+function roleLabel(role) {
+  if (role === 'admin') return 'Admin';
+  if (role === 'administrator') return 'Administrator';
+  if (role === 'inventory') return 'Inventory';
+  if (role === 'outbound') return 'Outbound';
+  if (role === 'storing') return 'Storing';
+  if (role === 'inbound') return 'Inbound';
+  if (role === 'cycle') return 'Cycle';
+  if (role === 'developer') return 'Developer';
+  return role;
+}
+
+function initials_(name) {
+  const parts = String(name || '').trim().split(/\s+/);
+  if (!parts.length || !parts[0]) return '?';
+  const a = parts[0][0] || '';
+  const b = parts.length > 1 ? (parts[parts.length - 1][0] || '') : '';
+  return (a + b).toUpperCase();
+}
+
+function greetingText_() {
+  const h = new Date().getHours();
+  if (h < 11) return 'Selamat pagi,';
+  if (h < 15) return 'Selamat siang,';
+  if (h < 18) return 'Selamat sore,';
+  return 'Selamat malam,';
+}
+
+function setupHomeScreen() {
+  // Administrator ikut dihitung sebagai "admin" di sisi tampilan menu -- superuser bisa
+  // buka semua menu yang bisa dibuka admin (Upload Data, Dashboard, dst), cuma memang
+  // tidak pernah ketiban tugas otomatis (itu diatur di server, bukan di sini).
+  // v8.26.1: Developer = super user, bisa lihat SEMUA menu (setara admin + inventory).
+  // Tapi tetap tidak pernah ketiban tugas (dikecualikan di server, lihat MasterData.gs).
+  const isDeveloper = currentUser.role === 'developer';
+  const isAdmin = currentUser.role === 'admin' || currentUser.role === 'administrator' || isDeveloper;
+  const isInventoryOrAdmin = currentUser.role === 'inventory' || isAdmin;
+  // v8.24.0: akses menu Setting Overflow independen dari role -- berbasis daftar NIK
+  // di sheet Config_Akses_Setting (lihat isNikPunyaAksesSetting_). Jadi bisa saja NIK
+  // non-admin punya akses ini, atau admin TIDAK punya kalau belum didaftarkan.
+  const aksesOverflow = !!currentUser.aksesSettingOverflow || isDeveloper;
+
+  // Header sapaan
+  el('homeAvatar').textContent = initials_(currentUser.username);
+  el('homeGreeting').textContent = greetingText_();
+  el('homeUsername').textContent = currentUser.username;
+  el('homeRolePill').textContent = roleLabel(currentUser.role);
+  // v8.26.0: Tampilkan nama facility user (jika sudah di-assign)
+  if (currentUser.facilityName) {
+    el('homeLocation').textContent = currentUser.facilityName;
+    if (el('titlebarFacility')) el('titlebarFacility').textContent = ' - Login: ' + currentUser.facilityName;
+  } else {
+    el('homeLocation').textContent = 'Belum di-assign ke facility';
+    if (el('titlebarFacility')) el('titlebarFacility').textContent = '';
+  }
+
+  // v8.26.2: Facility Switcher -- hanya untuk Developer, isi dari daftar facility Aktif.
+  el('devFacilitySwitcher').classList.toggle('hidden', !isDeveloper);
+  if (isDeveloper) muatDaftarFacilitySwitcher_();
+
+  // Menu utama
+  el('btnMenuValidasi').classList.toggle('hidden', !isInventoryOrAdmin);
+  el('btnMenuTask').classList.toggle('hidden', !isInventoryOrAdmin);
+  el('btnMenuPlusMinus').classList.toggle('hidden', !isInventoryOrAdmin);
+  el('btnMenuAdmin').classList.toggle('hidden', !isAdmin);
+  el('btnMenuDashboard').classList.toggle('hidden', !isAdmin);
+  el('btnMenuAnalytics').classList.toggle('hidden', !isAdmin);
+  el('btnMenuConfigHub').classList.toggle('hidden', !aksesOverflow);
+  el('sectionAdminTitle').classList.toggle('hidden', !isAdmin);
+  el('sectionSettingTitle').classList.toggle('hidden', !aksesOverflow);
+  el('sectionLaporanTitle').classList.toggle('hidden', !isAdmin);
+
+  // Sidebar
+  el('sideValidasi').classList.toggle('hidden', !isInventoryOrAdmin);
+  el('sideTask').classList.toggle('hidden', !isInventoryOrAdmin);
+  el('sidePlusMinus').classList.toggle('hidden', !isInventoryOrAdmin);
+  el('sideAdmin').classList.toggle('hidden', !isAdmin);
+  el('sideDashboard').classList.toggle('hidden', !isAdmin);
+  el('sideAnalytics').classList.toggle('hidden', !isAdmin);
+  el('sideConfigHub').classList.toggle('hidden', !aksesOverflow);
+  el('sideSectionAdmin').classList.toggle('hidden', !isAdmin);
+  el('sideSectionSetting').classList.toggle('hidden', !aksesOverflow);
+  el('sideSectionLaporan').classList.toggle('hidden', !isAdmin);
+  el('sidebarNav').classList.remove('hidden');
+
+  el('hkValidasiCard').classList.toggle('hidden', !isInventoryOrAdmin);
+  el('plusMinusCard').classList.toggle('hidden', !isInventoryOrAdmin);
+
+  showScreen('screenHome');
+  refreshHomeSummary();
+  refreshBadges();
+  if (isInventoryOrAdmin) refreshPlusMinusSummary();
+}
+
+function refreshHomeSummary() {
+  el('hkTotal').textContent = '-';
+  el('hkSelesai').textContent = '-';
+  el('hkValidasi').textContent = '-';
+  google.script.run
+    .withSuccessHandler(function (res) {
+      el('hkTotal').textContent = res.totalCycleHariIni;
+      el('hkSelesai').textContent = res.selesaiHariIni;
+      el('hkValidasi').textContent = res.belumValidasi;
+      el('footerLastUpdated').textContent = res.lastUpdated;
+      el('titlebarVersion').textContent = ' - ' + res.version;
+    })
+    .withFailureHandler(function () { /* diamkan; kpi tetap tampil '-' */ })
+    .getHomeSummary(currentUser.username);
+}
+
+let plusMinusDataCache_ = null;
+
+function refreshPlusMinusSummary() {
+  el('pmPlusQty').textContent = '-';
+  el('pmPlusSku').textContent = '-';
+  el('pmMinusQty').textContent = '-';
+  el('pmMinusSku').textContent = '-';
+  el('pmPlusDetail').classList.add('hidden');
+  el('pmMinusDetail').classList.add('hidden');
+  el('pmEmpty').textContent = '';
+  google.script.run
+    .withSuccessHandler(function (res) {
+      plusMinusDataCache_ = res;
+      el('pmPlusQty').innerHTML = res.plus.totalQty + ' <span style="font-size:0.55em; font-weight:600;">Qty</span>';
+      el('pmPlusSku').textContent = res.plus.totalSku;
+      el('pmMinusQty').innerHTML = res.minus.totalQty + ' <span style="font-size:0.55em; font-weight:600;">Qty</span>';
+      el('pmMinusSku').textContent = res.minus.totalSku;
+      el('pmEmpty').textContent = (!res.plus.totalSku && !res.minus.totalSku) ? 'Tidak ada discrepancy aktif saat ini. 🎉' : '';
+    })
+    .withFailureHandler(function () { /* diamkan; kpi tetap tampil '-' */ })
+    .getPlusMinusSummary(currentUser.username);
+}
+
+// Data Plus/Minus sudah lengkap sekali ambil (getPlusMinusSummary) -- klik kotak Plus/Minus
+// cuma toggle + render dari cache, tidak query server lagi.
+function togglePlusMinusDetail_(side) {
+  const detailEl = el(side === 'plus' ? 'pmPlusDetail' : 'pmMinusDetail');
+  const listEl = el(side === 'plus' ? 'pmPlusDetailList' : 'pmMinusDetailList');
+  const isOpen = !detailEl.classList.contains('hidden');
+  if (isOpen) { detailEl.classList.add('hidden'); return; }
+  detailEl.classList.remove('hidden');
+  if (!plusMinusDataCache_) return;
+
+  const items = plusMinusDataCache_[side].items;
+  listEl.innerHTML = '';
+  if (!items.length) { listEl.innerHTML = '<div class="hint">Tidak ada.</div>'; return; }
+  items.forEach(function (it) {
+    const row = document.createElement('div');
+    row.className = 'det-row';
+    // FIX: it.lokasi sekarang bisa berisi lebih dari 1 lokasi (dipisah ", ") kalau 1 SKU
+    // yang sama punya discrepancy di beberapa lokasi -- tandai jelas dengan jumlahnya,
+    // supaya tidak terlihat seperti cuma 1 lokasi.
+    const lokasiLabel = it.jumlahLokasi > 1
+      ? (it.jumlahLokasi + ' lokasi: ' + escapeHtml(it.lokasi))
+      : escapeHtml(it.lokasi);
+    row.innerHTML =
+      '<div><div class="det-loc">' + escapeHtml(it.article) + '</div>' +
+      '<div class="det-sub">' + escapeHtml(it.description) + ' &middot; ' +
+      lokasiLabel + '</div></div>' +
+      '<span class="pill ' + (side === 'plus' ? 'pill-hit' : 'pill-disc') +
+      '">' + it.qty + '</span>';
+    listEl.appendChild(row);
+  });
+}
+
+function refreshBadges() {
+  google.script.run.withSuccessHandler(function (count) {
+    setBadge_('badgeCycle', count);
+    setBadge_('sideBadgeCycle', count);
+  }).withFailureHandler(function () {}).getMyPendingCount(currentUser.username);
+
+  if (currentUser.role === 'inventory' || currentUser.role === 'admin' || currentUser.role === 'developer') {
+    google.script.run.withSuccessHandler(function (count) {
+      setBadge_('badgeValidasi', count);
+      setBadge_('sideBadgeValidasi', count);
+    }).withFailureHandler(function () {}).getPendingValidasiCount(currentUser.username);
+  }
+}
+
+function setBadge_(id, count) {
+  const badgeEl = el(id);
+  if (!badgeEl) return;
+  if (count > 0) {
+    badgeEl.textContent = count > 99 ? '99+' : String(count);
+    badgeEl.classList.remove('hidden');
+  } else {
+    badgeEl.classList.add('hidden');
+  }
+}
+
+// Administrator = superuser, bisa buka semua menu yang bisa dibuka admin (tapi tidak
+// pernah ketiban tugas). Supaya konsisten dengan requireRole_ di server & tidak perlu
+// ubah tiap pemanggil requireLogin_(['admin']) satu-satu: kalau allowedRoles mengizinkan
+// 'admin', 'administrator' otomatis ikut diizinkan juga.
+function requireLogin_(allowedRoles) {
+  if (!currentUser) { showScreen('screenLogin'); return false; }
+  // v8.26.1: Developer = super user, selalu lolos requireLogin_ apa pun allowedRoles-nya
+  // (bisa buka SEMUA menu). Tidak perlu ubah tiap pemanggil requireLogin_([...]) satu-satu.
+  if (currentUser.role === 'developer') return true;
+  const effectiveAllowed = (allowedRoles && allowedRoles.indexOf('admin') !== -1 && allowedRoles.indexOf('administrator') === -1)
+    ? allowedRoles.concat('administrator')
+    : allowedRoles;
+  if (effectiveAllowed && effectiveAllowed.indexOf(currentUser.role) === -1) {
+    alert('Menu ini tidak tersedia untuk role Anda.');
+    showScreen('screenHome');
+    return false;
+  }
+  return true;
+}
+
+function goHome_() {
+  if (!requireLogin_()) return;
+  showScreen('screenHome');
+  refreshHomeSummary();
+  refreshBadges();
+}
+
+// ---------- Tombol Refresh per menu ----------
+// Dipakai semua tombol refresh (Home, Admin, Task Investigasi, Dashboard) supaya
+// datanya bisa ditarik ulang dari server TANPA logout / reload halaman. reloadFn cukup
+// panggil fungsi loader yang sudah ada di masing-masing screen (loadX/refreshX) --
+// tidak ada query baru, cuma dipanggil ulang.
+function refreshCurrentScreen_(btn, reloadFn) {
+  if (btn) { btn.disabled = true; btn.classList.add('pulsing'); }
+  reloadFn();
+  // google.script.run async & tidak selalu punya 1 callback tunggal yang jelas (beberapa
+  // loader panggil beberapa google.script.run sekaligus) -- jadi tombol dilepas lagi
+  // setelah jeda tetap yang cukup untuk permintaan biasa, bukan menunggu callback pasti.
+  setTimeout(function () {
+    if (btn) { btn.disabled = false; btn.classList.remove('pulsing'); }
+  }, 1200);
+}
+
+function refreshHome_() {
+  refreshHomeSummary();
+  refreshBadges();
+  if (currentUser.role === 'inventory' || currentUser.role === 'admin' || currentUser.role === 'developer') refreshPlusMinusSummary();
+}
+</script>

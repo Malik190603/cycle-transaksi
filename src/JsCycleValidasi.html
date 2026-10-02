@@ -1,0 +1,336 @@
+<script>
+// ---------- Cycle Count ----------
+
+// v8.10.0: filter Area Gudang + Level Alat -- MURNI di sisi client,
+// tidak mengubah
+// urutan/logic assignment di server sama sekali. 'items' tetap daftar
+// LENGKAP semua
+// tugas Pending user ini (dari getMyPendingTasks, urutannya masih persis
+// hasil sorting
+// server). 'filteredItems' adalah subset sesuai Area+Level yang lagi
+// dipilih -- itu
+// yang benar-benar di-cycle satu-satu di layar counting.
+let filteredItems = [];
+let selectedArea = '';
+let selectedLevelGroup = '';
+
+function bukaCycleTransaksi() {
+  if (!requireLogin_()) return;
+  google.script.run
+    .withSuccessHandler(function (data) {
+      items = data;
+      if (!items.length) { showScreen('screenNoTask'); return; }
+      selectedArea = '';
+      selectedLevelGroup = '';
+      showScreen('screenCount');
+      buildFilterOptions_();
+      applyFilter_();
+    })
+    .withFailureHandler(onServerError_)
+    .getMyPendingTasks(currentUser.username);
+}
+
+/**
+ * Hitung sisa item Pending untuk kombinasi Area+Level tertentu. area/
+ * levelKey kosong
+ * berarti "semua" (dipakai buat hitung total per Area saja atau per
+ * Level saja).
+ */
+function sisaUntuk_(area, levelKey) {
+  return items.filter(function (it) {
+    return (!area || it.area === area) && (!levelKey || it.levelGroupKey === levelKey);
+  }).length;
+}
+
+/**
+ * Bangun ulang isi dropdown Area & Level dari 'items' (daftar lengkap
+ * yang tersisa).
+ * Opsi yang sisanya 0 (sudah tuntas) ditandai "- Selesai" dan
+ * di-disable, sesuai
+ * permintaan: "kalau A habis maka tidak bisa di klik lagi". Dipanggil
+ * ulang tiap kali
+ * ada item yang selesai disubmit (bukan cuma sekali di awal), supaya
+ * statusnya live.
+ */
+function buildFilterOptions_() {
+  const areaCount = {};
+  const levelInfo = {}; // key -> { label, count }
+  items.forEach(function (it) {
+    areaCount[it.area] = (areaCount[it.area] || 0) + 1;
+    if (!levelInfo[it.levelGroupKey]) levelInfo[it.levelGroupKey] = { label: it.levelGroupLabel, count: 0 };
+    levelInfo[it.levelGroupKey].count++;
+  });
+
+  const areaKeys = Object.keys(areaCount).sort();
+  const levelKeys = Object.keys(levelInfo);
+
+  // Kalau Area/Level yang lagi dipilih ternyata sudah habis (baru saja
+  // dituntaskan),
+  // otomatis pindah ke opsi pertama yang masih ada sisa.
+  if (areaKeys.indexOf(selectedArea) === -1 || sisaUntuk_(selectedArea, selectedLevelGroup) === 0) {
+    const nextArea = areaKeys.filter(function (a) { return sisaUntuk_(a, selectedLevelGroup) > 0; })[0];
+    selectedArea = nextArea !== undefined ? nextArea : (areaKeys[0] || '');
+  }
+
+  if (levelKeys.indexOf(selectedLevelGroup) === -1 || sisaUntuk_(selectedArea, selectedLevelGroup) === 0) {
+    const nextLevel = levelKeys.filter(function (k) { return sisaUntuk_(selectedArea, k) > 0; })[0];
+    selectedLevelGroup = nextLevel !== undefined ? nextLevel : (levelKeys[0] || '');
+  }
+
+  const areaSelect = el('filterAreaSelect');
+  const levelSelect = el('filterLevelSelect');
+
+  areaSelect.innerHTML = areaKeys.map(function (a) {
+    const sisa = sisaUntuk_(a, selectedLevelGroup);
+    const done = sisa === 0;
+    return '<option value="' + a + '" ' + (a === selectedArea ? 'selected' : '') + (done ? ' disabled' : '') +
+      '>Area ' + a + (done ? ' - Selesai' : ' (' + sisa + ')') + '</option>';
+  }).join('');
+
+  levelSelect.innerHTML = levelKeys.map(function (k) {
+    const sisa = sisaUntuk_(selectedArea, k);
+    const done = sisa === 0;
+    return '<option value="' + k + '" ' + (k === selectedLevelGroup ? 'selected' : '') + (done ? ' disabled' : '') +
+      '>' + levelInfo[k].label + (done ? ' - Selesai' : ' (' + sisa + ')') + '</option>';
+  }).join('');
+
+  // Kalau cuma ada 1 macam Area atau 1 macam Level (mayoritas hari
+  // biasa, tidak ada
+  // overflow Reach Truck->Tangga), sembunyikan dropdown yang
+  // bersangkutan -- tidak
+  // perlu nambah langkah buat kasus yang paling umum.
+  el('filterAreaWrap').classList.toggle('hidden', areaKeys.length <= 1);
+  el('filterLevelWrap').classList.toggle('hidden', levelKeys.length <= 1);
+}
+
+function onFilterChange_() {
+  selectedArea = el('filterAreaSelect').value;
+  selectedLevelGroup = el('filterLevelSelect').value;
+  applyFilter_();
+}
+
+function applyFilter_() {
+  filteredItems = items.filter(function (it) {
+    return (!selectedArea || it.area === selectedArea) &&
+      (!selectedLevelGroup || it.levelGroupKey === selectedLevelGroup);
+  });
+  currentIndex = 0;
+  renderCurrentItem();
+}
+
+function renderCurrentItem() {
+  if (!items.length) {
+    // Semua tugas (semua Area & semua Level) sudah tuntas.
+    showScreen('screenDone');
+    refreshBadges();
+    return;
+  }
+
+  if (currentIndex >= filteredItems.length) {
+    // Kombinasi Area+Level yang lagi dipilih sudah tuntas, TAPI masih
+    // ada sisa di
+    // kombinasi lain -- jangan ke screenDone, cukup minta pilih Area/
+    // Level lain lewat
+    // dropdown yang sudah ke-update otomatis oleh buildFilterOptions_().
+    el('lokasiText').textContent = '';
+    el('articleText').textContent = '';
+    el('qtyInput').value = '';
+    el('qtyInput').disabled = true;
+    el('btnSubmit').disabled = true;
+    el('resultBox').innerHTML = '<div style="text-align:center; color:var(--text-secondary); padding:20px 8px;">Area/Level ini sudah selesai.<br>Pilih Area atau Level lain di atas untuk lanjut.</div>';
+    el('progressText').textContent = 'Sisa total: ' + items.length + ' item di kombinasi lain';
+    return;
+  }
+
+  const item = filteredItems[currentIndex];
+  el('progressText').textContent = 'Item ' + (currentIndex + 1) + ' dari ' +
+    filteredItems.length + ' (Area ' + item.area + ', ' + item.levelGroupLabel + ')';
+  el('lokasiText').textContent = item.lokasi;
+  el('articleText').textContent = item.article + (item.description ? ' - ' + item.description : '');
+  el('qtyInput').value = '';
+  el('qtyInput').disabled = false;
+  el('btnSubmit').disabled = false;
+  el('btnSubmit').textContent = 'Submit';
+  el('resultBox').innerHTML = '';
+  el('qtyInput').focus();
+}
+
+function submitItem() {
+  const item = filteredItems[currentIndex];
+  if (!item) return;
+  const qty = el('qtyInput').value;
+  if (qty === '') { alert('Isi qty hasil hitung dulu.'); return; }
+
+  // v8.30.0 (Asynchronous Queue Processing): submitCount() SEKARANG cuma
+  // masuk antrian
+  // di server (tidak lagi menghitung HIT/DISCREPANCY secara sinkron) --
+  // jadi estimasi
+  // hasilnya dihitung DI SINI, dari qtySystem yang sudah dikirim
+  // getMyPendingTasks().
+  // Ini cuma estimasi utk feedback visual instan; pencatatan resmi tetap
+  // dilakukan
+  // Worker di server (single source of truth), biasanya dalam hitungan
+  // menit.
+  const aktual = Number(qty);
+  const selisihEstimasi = aktual - Number(item.qtySystem);
+  const hasilEstimasi = selisihEstimasi === 0 ? 'HIT' : 'DISCREPANCY';
+
+  el('btnSubmit').disabled = true;
+  el('btnSubmit').textContent = 'Menyimpan...';
+  el('qtyInput').disabled = true;
+  showPulseOverlay_('Menyimpan hasil hitung ' + item.article + '...');
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      hidePulseOverlay_();
+      if (!res.success) {
+        alert(res.message);
+        el('btnSubmit').disabled = false;
+        el('btnSubmit').textContent = 'Submit';
+        el('qtyInput').disabled = false;
+        return;
+      }
+
+      // v8.30.0: begitu MASUK ANTRIAN sukses (bukan tunggu Worker), item
+      // langsung
+      // disembunyikan dari layar user ini secara optimistic -- dari
+      // 'items' (daftar
+      // lengkap) supaya dropdown Area/Level & hitungan sisa langsung
+      // ikut update.
+      // Data mentah di sheet (Data Count/Riwayat) baru benar-benar
+      // ter-update setelah
+      // Worker jalan (maks ~1 menit), tapi itu tidak terasa oleh user
+      // karena UI sudah
+      // dianggap selesai di titik ini.
+      const idx = items.findIndex(function (x) { return x.no === item.no; });
+      if (idx !== -1) items.splice(idx, 1);
+
+      const prevArea = selectedArea, prevLevel = selectedLevelGroup;
+      buildFilterOptions_();
+      const filterBerubah = selectedArea !== prevArea || selectedLevelGroup !== prevLevel;
+      filteredItems = items.filter(function (it) {
+        return (!selectedArea || it.area === selectedArea) &&
+          (!selectedLevelGroup || it.levelGroupKey === selectedLevelGroup);
+      });
+      // Kalau Area/Level TIDAK berubah, currentIndex dibiarkan (item
+      // yang tadinya di
+      // posisi berikutnya otomatis geser ke posisi ini karena array-nya
+      // susut 1).
+      // Kalau BERUBAH (kombinasi lama baru tuntas, auto-pindah ke
+      // kombinasi lain),
+      // mulai dari awal kombinasi barunya.
+      if (filterBerubah) currentIndex = 0;
+
+      let badge;
+      if (hasilEstimasi === 'HIT') {
+        badge = '<div class="result-badge hit">✅ HIT (cocok) - diterima, diproses sistem</div>';
+      } else {
+        badge = '<div class="result-badge disc">⚠️ Selisih ' + selisihEstimasi + ' - diterima, akan masuk antrian Validasi</div>';
+      }
+      el('resultBox').innerHTML = badge;
+
+      setTimeout(function () { renderCurrentItem(); }, 900);
+    })
+    .withFailureHandler(function (err) {
+      hidePulseOverlay_();
+      onServerError_(err);
+      el('btnSubmit').disabled = false;
+      el('btnSubmit').textContent = 'Submit';
+      el('qtyInput').disabled = false;
+    })
+    .submitCount(item.no, currentUser.username, qty);
+}
+
+// ---------- Validasi ----------
+// Sejak v6: item Pending Validasi sudah di-assign otomatis (round-robin
+// antar role
+// Inventory) di server, jadi getPendingValidasi(username) di sini
+// otomatis cuma
+// mengembalikan item milik user ybs (Admin tetap lihat semua). Tidak ada
+// lagi langkah
+// pilih 'alasan' setelah DISCREPANCY final -- kategori dipilih nanti di
+// Task Investigasi.
+
+function bukaValidasi() {
+  if (!requireLogin_(['inventory', 'admin'])) return;
+  google.script.run
+    .withSuccessHandler(function (data) {
+      validasiItems = data;
+      validasiIndex = 0;
+      if (!validasiItems.length) { showScreen('screenValidasiDone'); return; }
+      showScreen('screenValidasi');
+      renderValidasiItem();
+    })
+    .withFailureHandler(onServerError_)
+    .getPendingValidasi(currentUser.username);
+}
+
+function renderValidasiItem() {
+  if (validasiIndex >= validasiItems.length) {
+    showScreen('screenValidasiDone');
+    refreshBadges();
+    return;
+  }
+  const item = validasiItems[validasiIndex];
+  el('validasiProgressText').textContent = 'Item ' + (validasiIndex + 1) +
+    ' dari ' + validasiItems.length;
+  el('validasiLokasiText').textContent = item.lokasi;
+  el('validasiArticleText').textContent = item.article + (item.description ? ' - ' + item.description : '');
+  el('validasiQtyInput').value = '';
+  el('validasiQtyInput').disabled = false;
+  el('btnValidasiSubmit').disabled = false;
+  el('btnValidasiSubmit').textContent = 'Submit';
+  el('validasiResultBox').innerHTML = '';
+  el('validasiQtyInput').focus();
+}
+
+function submitValidasiItem() {
+  const item = validasiItems[validasiIndex];
+  const qty = el('validasiQtyInput').value;
+  if (qty === '') { alert('Isi qty hasil validasi dulu.'); return; }
+
+  // v8.31.0 (Asynchronous Queue Processing): submitValidasi() sekarang
+  // cuma masuk
+  // antrian di server -- hasilFinal (HIT/DISCREPANCY) diestimasi DI SINI
+  // dari qtySystem
+  // yang sudah dikirim getPendingValidasi(). Cuma untuk feedback visual
+  // instan; pencatatan
+  // resmi tetap dilakukan Worker di server.
+  const aktual = Number(qty);
+  const hasilEstimasi = aktual === Number(item.qtySystem) ? 'HIT' : 'DISCREPANCY';
+
+  el('btnValidasiSubmit').disabled = true;
+  el('btnValidasiSubmit').textContent = 'Menyimpan...';
+  el('validasiQtyInput').disabled = true;
+  showPulseOverlay_('Menyimpan hasil validasi ' + item.article + '...');
+
+  google.script.run
+    .withSuccessHandler(function (res) {
+      hidePulseOverlay_();
+      if (!res.success) {
+        alert(res.message);
+        el('btnValidasiSubmit').disabled = false;
+        el('btnValidasiSubmit').textContent = 'Submit';
+        el('validasiQtyInput').disabled = false;
+        validasiIndex++;
+        renderValidasiItem();
+        return;
+      }
+      if (hasilEstimasi === 'HIT') {
+        el('validasiResultBox').innerHTML = '<div class="result-badge hit">✅ HIT (final) - diterima, diproses sistem</div>';
+      } else {
+        el('validasiResultBox').innerHTML = '<div class="result-badge disc">⚠️ DISCREPANCY (final) - diterima, akan masuk Task Investigasi</div>';
+      }
+
+      setTimeout(function () { validasiIndex++; renderValidasiItem(); }, 1100);
+    })
+    .withFailureHandler(function (err) {
+      hidePulseOverlay_();
+      onServerError_(err);
+      el('btnValidasiSubmit').disabled = false;
+      el('btnValidasiSubmit').textContent = 'Submit';
+      el('validasiQtyInput').disabled = false;
+    })
+    .submitValidasi(item.id, currentUser.username, qty);
+}
+</script>
