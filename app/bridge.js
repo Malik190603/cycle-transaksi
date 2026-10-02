@@ -62,7 +62,7 @@
     }
     if (j && j.ok === true) return j.result === undefined ? null : j.result;
     if (j && j.ok === false) throw new Error(j.error || 'Terjadi kesalahan di server.');
-    throw new Error('Backend belum mendukung aplikasi ini. Pasang backend/ApiBridge.gs di project Apps Script lalu deploy ulang Web App.');
+    throw new Error('Backend belum mendukung aplikasi ini. Tempel backend/Code.gs versi terbaru di Apps Script lalu deploy versi baru.');
   }
 
   /* ------------------------------ pengganti google.script.run ------------------------------ */

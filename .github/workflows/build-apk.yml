@@ -4,6 +4,8 @@ name: Build APK Android
 on:
   push:
     branches: [main]
+    # Perubahan backend Apps Script, uji, atau dokumen saja tidak perlu rilis APK baru
+    paths-ignore: ['backend/**', 'test/**', 'README.md', 'scripts/build-backend.mjs']
   workflow_dispatch:
 
 permissions:

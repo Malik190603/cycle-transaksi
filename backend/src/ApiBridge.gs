@@ -10,15 +10,8 @@
  * (urutan parameter fungsi .gs), jadi tidak ada pemetaan nama field yang bisa meleset.
  * Hanya fungsi di daftar API_BRIDGE_ALLOW_ yang boleh dipanggil.
  *
- * CARA PASANG (sekali saja):
- * 1. Tambahkan file ini ke project Apps Script (File baru > Script > beri nama ApiBridge).
- * 2. Di Main.gs, di dalam doPost(e), tepat setelah baris
- *        const req = JSON.parse(e.postData.contents || '{}');
- *    tambahkan dua baris:
- *        const viaApk = apiBridge_(req);
- *        if (viaApk) return viaApk;
- * 3. Deploy > Manage deployments > Edit > Version: New version.
- *    Execute as: Me. Who has access: Anyone. Salin URL yang berakhiran /exec.
+ * doPost() di Main.gs memanggil apiBridge_(req) lebih dulu; permintaan tanpa "args" diteruskan
+ * ke router lama (API_ACTIONS).
  */
 
 const API_BRIDGE_ALLOW_ = [

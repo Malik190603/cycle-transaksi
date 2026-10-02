@@ -10,7 +10,8 @@
     "check": "node scripts/check.mjs",
     "version": "node scripts/version.mjs",
     "notes": "node scripts/release-notes.mjs",
-    "test": "node test/run.mjs"
+    "test": "node test/run.mjs && node test/backend.mjs && node test/backend.mjs --single",
+    "backend": "node scripts/build-backend.mjs"
   },
   "dependencies": {
     "@capacitor-community/file-opener": "8.0.1",
@@ -23,6 +24,7 @@
     "@capgo/capacitor-updater": "8.52.1"
   },
   "devDependencies": {
+    "terser": "^5.51.2",
     "xlsx": "0.18.5"
   }
 }

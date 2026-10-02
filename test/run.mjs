@@ -109,7 +109,7 @@ check('setelah keluar, muat ulang kembali ke layar masuk', await page.isVisible(
 await ctx.unroute(EXEC);
 await ctx.route(EXEC, (route) => route.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ success: false, message: 'Unknown action' }) }));
 const old = await page.evaluate(() => window.CT_BRIDGE.call('getAppVersion', []).then(() => 'lolos', (e) => e.message));
-check('backend tanpa ApiBridge dikenali', /ApiBridge/.test(old), old);
+check('backend tanpa ApiBridge dikenali', /Code\.gs/.test(old), old);
 await ctx.unroute(EXEC); await ctx.route(EXEC, (route) => route.abort('internetdisconnected'));
 const off = await page.evaluate(() => window.CT_BRIDGE.call('getAppVersion', []).then(() => 'lolos', (e) => e.message));
 check('tanpa internet → pesan koneksi', /koneksi internet/.test(off), off);

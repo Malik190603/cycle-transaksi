@@ -12,17 +12,22 @@ HP Android (APK)                          Google
 └──────────────────────────┘            └──────────────────────────────────────┘
 ```
 
-## Langkah 1 — Pasang pintu masuk di Apps Script (sekali saja)
+## Langkah 1 — Pasang backend di spreadsheet (sekali saja)
 
-1. Buka project Apps Script Cycle Transaksi. Tambah file skrip baru bernama `ApiBridge`, tempel isi `backend/ApiBridge.gs`.
-2. Di `Main.gs`, di dalam `doPost(e)`, tepat setelah baris `const req = JSON.parse(e.postData.contents || '{}');` tambahkan:
-   ```js
-   const viaApk = apiBridge_(req);
-   if (viaApk) return viaApk;
-   ```
-3. **Deploy › Manage deployments › Edit › Version: New version.** Execute as: **Me**. Who has access: **Anyone**. Salin URL yang berakhiran `/exec`.
+Satu spreadsheet Google menampung semuanya: user, facility, lokasi aktif, tugas hitung, riwayat, antrean, ringkasan, dan log.
 
-Tidak ada file `.gs` lain yang perlu diubah. Web app lama (lewat browser) tetap berjalan seperti biasa.
+1. Buka spreadsheet-nya di komputer, lalu **Extensions › Apps Script**.
+2. Hapus isi `Code.gs`, tempel **seluruh** isi [`backend/Code.gs`](backend/Code.gs) (buka tombol *Raw*, pilih semua, salin), lalu simpan.
+3. Isi tiga konstanta `SETUP_FACILITY_NAMA_`, `SETUP_FACILITY_KODE_`, `SETUP_ADMIN_NIK_` (cari `ISI.NIK.ADMIN` dengan Ctrl+F). NIK sengaja tidak disimpan di repo publik ini.
+4. Pilih fungsi **`setupAwal`** di bilah atas, klik **Run**, dan izinkan akses. Fungsi ini membuat 24 sheet beserta header-nya, facility pertama, admin pertama, dan trigger `workerSemua` yang memproses antrean tiap 1 menit. Aman dijalankan ulang.
+5. Isi sheet **`Lokasi_Aktif`** kolom A (satu lokasi per baris, mis. `A03.23.02`), atau impor lewat menu Config › Facility Management di aplikasi. Lokasi di luar daftar ini tidak dijadikan tugas.
+6. **Deploy › New deployment › Web app.** Execute as: **Me**. Who has access: **Anyone**. Salin URL yang berakhiran `/exec`.
+
+Setelah itu tambah user lain lewat menu **Config › Manajemen User** di aplikasi (mereka otomatis masuk facility admin yang menambahkan). Agar selisih bisa divalidasi oleh orang kedua, minimal harus ada satu user berperan **Inventory**.
+
+Setiap kali `backend/Code.gs` berubah: tempel ulang, lalu **Deploy › Manage deployments › Edit › Version: New version** (URL tetap sama).
+
+**Catatan kuota:** trigger tiap menit memakai jatah waktu trigger Apps Script (90 menit/hari untuk akun Gmail biasa, 6 jam untuk Google Workspace). Karena itu keempat antrean dijalankan oleh satu trigger, bukan empat.
 
 ## Langkah 2 — Alamat server
 
@@ -64,9 +69,18 @@ Aplikasi memeriksa versi lewat `releases/latest/download/latest.json`, bukan Git
 
 ## Mengubah tampilan
 
-File di `src/` adalah file HTML yang sama dengan project Apps Script. Kalau tampilan diubah di Apps Script, salin file `.html` yang berubah ke `src/`, lalu commit. Kalau menambah fungsi server baru yang dipanggil `google.script.run`, tambahkan namanya ke `API_BRIDGE_ALLOW_` di `ApiBridge.gs` (dan perbarui di Apps Script).
+File di `src/` adalah file HTML yang sama dengan project Apps Script. Kalau tampilan diubah di Apps Script, salin file `.html` yang berubah ke `src/`, lalu commit. Kalau menambah fungsi server baru yang dipanggil `google.script.run`, tambahkan namanya ke `API_BRIDGE_ALLOW_` di `backend/src/ApiBridge.gs`.
 
-Uji lokal: `npm install && npm run build && npm test` (memakai backend tiruan di Chromium).
+## Mengubah backend
+
+Sumber backend ada di `backend/src/*.gs` (28 file). Setelah mengubahnya jalankan `npm run backend` untuk menyusun ulang `backend/Code.gs`, lalu tempel ke Apps Script dan deploy versi baru.
+
+## Uji lokal
+
+`npm install && npm run build && npm test` menjalankan dua uji:
+
+- `test/run.mjs`: jembatan aplikasi di Chromium dengan backend tiruan (layar masuk sampai submit hitung).
+- `test/backend.mjs`: backend asli dijalankan di Node dengan tiruan layanan Google (`test/gas-mock.mjs`), dari `setupAwal`, unggah data, hitung, validasi, verifikasi dengan bukti WMS, Penyelesaian Plus Minus, sampai Dashboard dan Analytics. Semua panggilan lewat `doPost` dengan format yang sama seperti APK.
 
 ## Isi repo
 
@@ -74,7 +88,8 @@ Uji lokal: `npm install && npm run build && npm test` (memakai backend tiruan di
 |---|---|
 | `src/` | Tampilan asli Apps Script (`Index.html`, `Body*.html`, `Js*.html`, `Style.html`) |
 | `app/bridge.js`, `app/bridge.css` | Jembatan pengganti `google.script.run`, alamat server, sesi, update |
-| `backend/ApiBridge.gs` | File yang ditambahkan ke project Apps Script |
+| `backend/Code.gs` | Backend Apps Script satu file, siap tempel |
+| `backend/src/` | Sumber backend per modul, termasuk `Setup.gs` (setup awal) dan `ApiBridge.gs` (pintu masuk APK) |
 | `scripts/` | Build web, pemeriksaan, versi, catatan rilis, update kilat, pembuat ikon |
 | `android/` | Proyek Android (Capacitor). Kunci tanda tangan `android/app/cycle-transaksi.keystore` jangan dihapus atau diganti |
-| `test/run.mjs` | Uji jembatan dari layar masuk sampai submit hitung |
+| `test/` | Uji jembatan aplikasi dan uji ujung-ke-ujung backend |
