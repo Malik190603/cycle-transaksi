@@ -6436,8 +6436,8 @@ function getTaskLog(limit, requesterUsername, dateFrom, dateTo) {
   const sheet = getRiwayatSheet_(requesterUsername);
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
-  const fromDate = dateFrom ? new Date(dateFrom + 'T00:00:00') : null;
-  const toDate = dateTo ? new Date(dateTo + 'T23:59:59') : null;
+  const fromDate = dateFrom ? new Date(dateFrom + 'T00:00:00+07:00') : null;
+  const toDate = dateTo ? new Date(dateTo + 'T23:59:59+07:00') : null;
   const data = sheet.getRange(2, 1, lastRow - 1, RIWAYAT_HEADERS.length).getValues();
   const logs = [];
   data.forEach(function(row) {

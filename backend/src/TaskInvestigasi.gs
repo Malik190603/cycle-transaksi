@@ -486,8 +486,11 @@ function getTaskLog(limit, requesterUsername, dateFrom, dateTo) {
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
 
-  const fromDate = dateFrom ? new Date(dateFrom + 'T00:00:00') : null;
-  const toDate = dateTo ? new Date(dateTo + 'T23:59:59') : null;
+  // Rentang tanggal dibaca sebagai hari kerja WIB, sama seperti semua tanggal lain di sistem ini. Tanpa
+  // "+07:00" batasnya mengikuti zona waktu project Apps Script, sehingga task yang ditutup dini hari
+  // bisa jatuh ke hari yang salah (bergeser 1 jam di WITA, 7 jam bila zonanya UTC).
+  const fromDate = dateFrom ? new Date(dateFrom + 'T00:00:00+07:00') : null;
+  const toDate = dateTo ? new Date(dateTo + 'T23:59:59+07:00') : null;
 
   const data = sheet.getRange(2, 1, lastRow - 1, RIWAYAT_HEADERS.length).getValues();
   const logs = [];
