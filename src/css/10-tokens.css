@@ -1,0 +1,87 @@
+/* Token desain Cycle Transaksi. Lihat docs/DESAIN.md untuk alasan tiap pilihan. */
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 400; font-display: swap; src: url('fonts/barlow-400.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 500; font-display: swap; src: url('fonts/barlow-500.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 600; font-display: swap; src: url('fonts/barlow-600.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow'; font-style: normal; font-weight: 700; font-display: swap; src: url('fonts/barlow-700.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-style: normal; font-weight: 600; font-display: swap; src: url('fonts/barlow-condensed-600.woff2') format('woff2'); }
+@font-face { font-family: 'Barlow Condensed'; font-style: normal; font-weight: 700; font-display: swap; src: url('fonts/barlow-condensed-700.woff2') format('woff2'); }
+
+:root {
+  /* Dasar */
+  --lantai: #F3F4F7;      /* latar halaman: lantai gudang */
+  --lantai-2: #E9EBF0;    /* isian tertekan, jalur progres */
+  --kertas: #FFFFFF;      /* kartu, lembar */
+  --tinta: #191B20;       /* teks utama */
+  --abu: #646B7A;         /* teks pendukung */
+  --abu-2: #8D94A3;       /* teks redup, ikon pasif */
+  --garis: #E2E5EB;       /* garis tipis */
+  --garis-kuat: #CDD2DB;
+
+  /* Aksi */
+  --biru: #0A66E4;        /* Biru Rak: tombol utama, Cycle */
+  --biru-tua: #0850B8;
+  --biru-muda: #E7F0FE;
+  --di-warna: #FFFFFF;    /* teks & ikon di atas isian berwarna (tombol, ubin ikon, lencana) */
+  --di-jingga: #201400;   /* jingga cukup terang: angka lencana di atasnya gelap, di kedua tema */
+  --seg-aktif: #FFFFFF;   /* pilihan aktif pada kontrol segmen */
+
+  /* Label rak: satu-satunya elemen yang "keras" */
+  --kuning: #FFD326;
+  --kuning-tepi: #E3B700;
+  --tinta-label: #17150A;
+
+  /* Status: warna = arti, dipakai sama di KPI, lencana, grafik */
+  --jingga: #E8830C;  --jingga-teks: #A85A00;  --jingga-muda: #FDF0DE;   /* belum di cycle */
+  --ungu: #7447E0;    --ungu-teks: #5B31C4;    --ungu-muda: #EFEAFD;     /* validasi */
+  --hijau: #1A9D53;   --hijau-teks: #11783D;   --hijau-muda: #E4F5EA;    /* selesai, cocok, plus */
+  --merah: #DC3A3A;   --merah-teks: #BF2626;   --merah-muda: #FDEBEB;    /* minus, kritis, galat */
+
+  /* Bentuk: radius mengikuti hierarki, bukan satu angka untuk semua */
+  --r-kartu: 20px;
+  --r-ubin: 13px;
+  --r-isian: 14px;
+  --r-tombol: 16px;
+  --r-lembar: 26px;
+  --bayang-melayang: 0 10px 30px rgba(22, 27, 45, 0.13), 0 2px 6px rgba(22, 27, 45, 0.06);
+  --bayang-lembar: 0 -10px 44px rgba(16, 20, 34, 0.20);
+
+  /* Huruf */
+  --huruf: 'Barlow', system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --huruf-rapat: 'Barlow Condensed', 'Barlow', 'Arial Narrow', system-ui, sans-serif;
+
+  /* Gerak */
+  --luwes: cubic-bezier(0.2, 0.8, 0.2, 1);
+
+  /* Area aman (bilah status & gestur Android) */
+  --sat: var(--safe-area-inset-top, env(safe-area-inset-top, 0px));
+  --sab: var(--safe-area-inset-bottom, env(safe-area-inset-bottom, 0px));
+
+  color-scheme: light;
+}
+
+html[data-tema='gelap'] {
+  --lantai: #0F1115;
+  --lantai-2: #23272F;
+  --kertas: #191C22;
+  --tinta: #ECEEF3;
+  --abu: #A0A7B5;
+  --abu-2: #7A8191;
+  --garis: #2A2F39;
+  --garis-kuat: #3A404D;
+
+  --biru: #5B9DFF;
+  --biru-tua: #3F86F2;
+  --biru-muda: #16263F;
+  --di-warna: #0B1220;    /* di tema gelap warna isian lebih terang, jadi isinya gelap */
+  --seg-aktif: #3A4150;
+
+  --jingga: #F29A2E;  --jingga-teks: #F6AE55;  --jingga-muda: #33240F;
+  --ungu: #9A78F2;    --ungu-teks: #B39BF7;    --ungu-muda: #251C40;
+  --hijau: #35B86D;   --hijau-teks: #5FCB8C;   --hijau-muda: #132C1E;
+  --merah: #F06060;   --merah-teks: #F58585;   --merah-muda: #371A1A;
+
+  --bayang-melayang: 0 10px 30px rgba(0, 0, 0, 0.5), 0 2px 6px rgba(0, 0, 0, 0.3);
+  --bayang-lembar: 0 -10px 44px rgba(0, 0, 0, 0.55);
+
+  color-scheme: dark;
+}

@@ -34,7 +34,9 @@ const API_BRIDGE_ALLOW_ = [
   // Facility Management
   'getDaftarFacility', 'tambahFacility', 'daftarkanFacilityExisting', 'updateNamaFacility', 'setStatusFacility',
   'assignUserKeFacility', 'getDaftarUserFacilityAssignment', 'importLokasiAktif', 'getDaftarLokasiAktif',
-  'copyLokasiDariFacility', 'setDeveloperActiveFacility'
+  'copyLokasiDariFacility', 'setDeveloperActiveFacility',
+  // Aplikasi v2: satu layar, satu panggilan (AppApi.gs)
+  'getHomeBundle', 'getUploadFormData', 'getProductivity', 'getOpenTaskCount'
 ];
 
 /**

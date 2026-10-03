@@ -187,7 +187,7 @@ function buildAssignedRowsEquipmentAware_(items, startingNo, tanggalUpload, reac
 
   if (reachTruckItems.length) {
     if (!reachTruckUsers.length) {
-      warnings.push(reachTruckItems.length + ' item Level 5-6 (Reach Truck) TIDAK dibagi karena tidak ada user role Storing yang dicentang.');
+      warnings.push(reachTruckItems.length + ' item Level 5-6 (reach truck) tidak dibagi karena tidak ada petugas Storing yang dipilih.');
     } else {
       const rows1 = buildAssignedRows_(reachTruckItems, no, tanggalUpload, reachTruckUsers, existingBacklogEffort, compareLocationEvenOddSection_);
       output = output.concat(rows1);
@@ -197,7 +197,7 @@ function buildAssignedRowsEquipmentAware_(items, startingNo, tanggalUpload, reac
 
   if (tanggaItems.length) {
     if (!tanggaUsers.length) {
-      warnings.push(tanggaItems.length + ' item Level 3-4 (Tangga Pesawat) TIDAK dibagi karena Tangga Ready = 0.');
+      warnings.push(tanggaItems.length + ' item Level 3-4 (tangga pesawat) tidak dibagi karena jumlah tangga pesawat 0.');
     } else {
       const rows2 = buildAssignedRows_(tanggaItems, no, tanggalUpload, tanggaUsers, existingBacklogEffort, compareLocationEvenOddSection_);
       output = output.concat(rows2);
@@ -207,7 +207,7 @@ function buildAssignedRowsEquipmentAware_(items, startingNo, tanggalUpload, reac
 
   if (bawahItems.length) {
     if (!bawahUsers.length) {
-      warnings.push(bawahItems.length + ' item Level 1-2 (Bawah) TIDAK dibagi karena tidak ada petugas tersisa di luar slot Reach Truck/Tangga.');
+      warnings.push(bawahItems.length + ' item Level 1-2 tidak dibagi karena tidak ada petugas tersisa setelah reach truck dan tangga pesawat.');
     } else {
       const rows3 = buildAssignedRows_(bawahItems, no, tanggalUpload, bawahUsers, existingBacklogEffort);
       output = output.concat(rows3);
@@ -313,12 +313,12 @@ function importRawData(transaksiRawRows, stockRows, selectedUsernames, requester
   if (!facInfo) {
     return {
       success: false,
-      message: 'Akun Anda belum di-assign ke facility manapun (atau facility-nya nonaktif). Hubungi admin lain untuk set assignment facility Anda, atau kalau Anda Developer, pilih facility aktif dulu lewat Facility Switcher.'
+      message: PESAN_TANPA_FACILITY_
     };
   }
 
   const facilityId = facInfo.id;
-  const facilityName = facInfo.name;
+  const facilityName = facInfo.nama || facInfo.name || '';
 
   const assignableInFacility = getAssignableUsers_(facilityId);
   const assignableMap = {};
@@ -334,7 +334,7 @@ function importRawData(transaksiRawRows, stockRows, selectedUsernames, requester
   if (userTidakValid.length > 0) {
     return {
       success: false,
-      message: 'User berikut TIDAK TERDAFTAR di facility "' + facilityName + '" atau tidak bisa diberi tugas: ' + userTidakValid.join(', ') + '. Pilih hanya user yang sudah di-assign ke facility ini.'
+      message: 'User berikut tidak terdaftar di facility "' + facilityName + '" atau tidak bisa diberi tugas: ' + userTidakValid.join(', ') + '. Muat ulang daftar petugas lalu pilih lagi.'
     };
   }
 
@@ -349,14 +349,14 @@ function importRawData(transaksiRawRows, stockRows, selectedUsernames, requester
   // v8.26.3: mode_assignment SEKARANG per-facility, baca dari facility requesterUsername.
   const modeAssignmentSaatIni = getLevelAssignmentMeta_(getLevelAssignmentSheet_(requesterUsername)).mode;
   const reachTruckNote = (modeAssignmentSaatIni === 'legacy' && reachTruckReadyNum && reachTruckReadyNum !== reachTruckUsers.length)
-    ? (' (Catatan: Input Reach Truck Ready (' + reachTruckReadyNum + ') beda dari jumlah user role Storing yang dicentang (' + reachTruckUsers.length + ') -- yang dipakai tetap semua user Storing yang dicentang, input cuma referensi.)')
+    ? ('Jumlah reach truck (' + reachTruckReadyNum + ') berbeda dari jumlah petugas Storing yang dipilih (' + reachTruckUsers.length + '). Semua petugas Storing yang dipilih tetap mendapat tugas Level 5-6.')
     : '';
 
   // v8.26.0: Baca lokasi aktif DARI FACILITY admin yang upload, bukan global
   reportProgress_(jobId, 15, 'Memuat lokasi aktif facility');
   const activeLocations = getActiveLocations_(requesterUsername);
   if (Object.keys(activeLocations).length === 0) {
-    return { success: false, message: 'Tidak ada lokasi aktif untuk facility "' + facilityName + '". Import lokasi aktif terlebih dahulu di Config > Facility Management.' };
+    return { success: false, message: 'Tidak ada lokasi aktif untuk facility "' + facilityName + '". Impor lokasi aktif dulu lewat Config, tab Facility.' };
   }
 
   // v8.29.0: lock PER-FACILITY (bukan lock global) -- upload admin DC lain gak skut ke-block.
@@ -471,7 +471,9 @@ function importRawData(transaksiRawRows, stockRows, selectedUsernames, requester
         success: true,
         message: mergedCount + ' item digabung dengan tugas Pending yang sudah ada (qty ditambahkan). Tidak ada tugas baru dibuat.',
         merged: mergedCount,
-        ditugaskan: 0
+        ditugaskan: 0,
+        peringatan: [],
+        catatan: []
       };
     }
 
@@ -502,6 +504,9 @@ function importRawData(transaksiRawRows, stockRows, selectedUsernames, requester
       skippedBlankLokasi: skippedBlankLokasi,
       skippedOtherType: skippedOtherType,
       warning: warningGabungan,
+      // Untuk aplikasi: peringatan & catatan sebagai daftar, supaya tidak perlu mengurai `message`.
+      peringatan: tulis.warnings || [],
+      catatan: [reachTruckNote, tulis.overflowPesan].filter(function (x) { return x; }),
       perluKonfirmasi: !!(tulis.warnings && tulis.warnings.length),
       modeAssignment: tulis.modeAssignment,
       facilityName: facilityName

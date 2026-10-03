@@ -54,7 +54,7 @@ function getOpenTasksData_(username) {
       description: row[4],
       selisih: row[9], namaPetugas: row[7], kategori: row[17], alasan: row[17],
       statusTask: statusTask, picInvestigasi: row[23], addWhoTransaksi: row[25],
-      nameValidator: row[12],
+      namaValidator: row[12], nameValidator: row[12], // nameValidator: ejaan lama, dipertahankan untuk klien lama
       umurHari: umurHari, isCritical: umurHari > TASK_SLA_HARI,
       skorPrioritas: skorPrioritas
     });
@@ -249,7 +249,7 @@ function updateTaskStatus(id, namaUser, newStatus, catatan, kategori, picUsernam
 
   const facInfo = requireUserFacility_(namaUser);
   if (!facInfo) {
-    return { success: false, message: 'Akun Anda belum di-assign ke facility manapun (atau facility-nya nonaktif). Hubungi admin untuk set assignment facility. Kalau Anda Developer, pilih facility aktif dulu lewat Facility Switcher.' };
+    return { success: false, message: PESAN_TANPA_FACILITY_ };
   }
 
   // v8.31.0 (Asynchronous Queue Processing, lihat TaskQueue.gs): penulisan sesungguhnya
@@ -343,7 +343,7 @@ function closePlusMinusPair(minusTaskId, plusTaskId, namaUser, catatan, picUsern
   // v8.29.0: wajib punya facility valid SEBELUM masuk antrean lock (lihat requireUserFacility_).
   const facInfo = requireUserFacility_(namaUser);
   if (!facInfo) {
-    return { success: false, message: 'Akun Anda belum di-assign ke facility manapun (atau facility-nya nonaktif). Hubungi admin untuk set assignment facility. Kalau Anda Developer, pilih facility aktif dulu lewat Facility Switcher.' };
+    return { success: false, message: PESAN_TANPA_FACILITY_ };
   }
 
   // v8.29.0: lock PER-FACILITY (bukan lock global) -- proses dari DC lain gak ikut ke-block.

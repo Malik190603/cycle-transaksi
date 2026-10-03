@@ -73,8 +73,8 @@ const LEVEL_ASSIGNMENT_META_MAKSGRUP_KEY_ = '_meta_maks_grup_alat_';
 // begitu admin
 // pertama kali buka layar Pembagian Tugas, SEBELUM dia ubah apa pun.
 const LEVEL_ASSIGNMENT_DEFAULTS_ = {
-  bawah: { roles: ['outbound', 'inbound', 'inventory', 'admin'], mode: 'pemerataan' },
-  tangga: { roles: ['outbound', 'inbound', 'inventory', 'admin'], mode: 'pemerataan' },
+  bawah: { roles: ['outbound', 'inbound', 'lp', 'maintenance', 'inventory', 'admin'], mode: 'pemerataan' },
+  tangga: { roles: ['outbound', 'inbound', 'lp', 'maintenance', 'inventory', 'admin'], mode: 'pemerataan' },
   reach_truck: { roles: ['storing'], mode: 'pemerataan' }
 };
 
@@ -408,7 +408,7 @@ function buildAssignedRowsMatrixAware_(items, startingNo, tanggalUpload, selecte
     const pool = bangunPoolGrupAlat_(grupConfig, selectedUsernames, usernameRoleMap, grupItems.length, produktivitas);
 
     if (!pool.length) {
-      warnings.push(grupItems.length + ' item ' + g.label + ' TIDAK dibagi karena tidak ada user dengan role yang eligible (cek Config > Pembagian Tugas).');
+      warnings.push(grupItems.length + ' item ' + g.label + ' tidak dibagi karena tidak ada petugas terpilih dengan peran yang sesuai. Periksa Config, tab Pembagian tugas.');
       return;
     }
 
@@ -420,5 +420,14 @@ function buildAssignedRowsMatrixAware_(items, startingNo, tanggalUpload, selecte
     no += rows.length;
   });
 
-  return { rows: output, warnings: warnings, overflowPesan: '', overflowCount: 0 };
+  // Petugas terpilih yang perannya tidak dicentang di grup alat mana pun tidak akan mendapat tugas.
+  // Tanpa catatan ini admin baru menyadarinya saat petugas itu melapor tidak punya tugas.
+  const peranBerGrup = {};
+  matrix.forEach(function (m) { (m.roles || []).forEach(function (r) { peranBerGrup[r] = true; }); });
+  const tanpaGrup = selectedUsernames.filter(function (u) { return !peranBerGrup[usernameRoleMap[String(u).toLowerCase()]]; });
+  const catatanTanpaGrup = tanpaGrup.length
+    ? (tanpaGrup.length + ' petugas terpilih tidak mendapat tugas karena perannya belum dicentang di Config, tab Pembagian tugas: ' + tanpaGrup.join(', ') + '.')
+    : '';
+
+  return { rows: output, warnings: warnings, overflowPesan: catatanTanpaGrup, overflowCount: 0 };
 }

@@ -20,8 +20,11 @@ const head = `/**
  * 1. Di spreadsheet: Extensions > Apps Script. Hapus isi Code.gs, tempel SELURUH file ini, simpan.
  * 2. Pilih fungsi "setupAwal" di bilah atas, klik Run, izinkan akses. Semua sheet, facility,
  *    admin pertama, dan trigger antrean dibuat otomatis.
- * 3. Deploy > New deployment > Web app. Execute as: Me. Who has access: Anyone. Salin URL /exec
- *    ke menu "Atur server" di aplikasi Android.
+ * 3. Deploy > New deployment > Web app. Execute as: Me. Who has access: Anyone. Kirim URL /exec
+ *    ke pengembang aplikasi: alamat itu ditanam di aplikasi (app/server.json), bukan diisi pengguna.
+ *
+ * PERBARUI BACKEND: tempel ulang file ini, lalu Deploy > Manage deployments > Edit > Version: New version.
+ * URL /exec tidak berubah, jadi aplikasi tidak perlu disetel ulang.
  */
 `;
 let body = head + out.code + '\n';

@@ -1,13 +1,16 @@
 /**
- * Cycle Transaksi - backend Apps Script v8.29.3 (satu file, gabungan 28 file di backend/src).
+ * Cycle Transaksi - backend Apps Script v8.31.1-apk2 (satu file, gabungan 29 file di backend/src).
  * JANGAN diedit di sini: ubah file di backend/src lalu jalankan "npm run backend".
  *
  * PASANG PERTAMA KALI:
  * 1. Di spreadsheet: Extensions > Apps Script. Hapus isi Code.gs, tempel SELURUH file ini, simpan.
  * 2. Pilih fungsi "setupAwal" di bilah atas, klik Run, izinkan akses. Semua sheet, facility,
  *    admin pertama, dan trigger antrean dibuat otomatis.
- * 3. Deploy > New deployment > Web app. Execute as: Me. Who has access: Anyone. Salin URL /exec
- *    ke menu "Atur server" di aplikasi Android.
+ * 3. Deploy > New deployment > Web app. Execute as: Me. Who has access: Anyone. Kirim URL /exec
+ *    ke pengembang aplikasi: alamat itu ditanam di aplikasi (app/server.json), bukan diisi pengguna.
+ *
+ * PERBARUI BACKEND: tempel ulang file ini, lalu Deploy > Manage deployments > Edit > Version: New version.
+ * URL /exec tidak berubah, jadi aplikasi tidak perlu disetel ulang.
  */
 function setupMasterLevelSettings() {
   const ui = SpreadsheetApp.getUi();
@@ -415,14 +418,20 @@ function adjustPlusMinusTracker_(selisih, article, description, lokasi, add, use
 }
 
 function getPlusMinusSummaryFromAntrian_(username) {
+  const plusMap = readAntrianValue_(PLUSMINUS_KEY_PLUS_, {}, username);
+  const minusMap = readAntrianValue_(PLUSMINUS_KEY_MINUS_, {}, username);
+  return plusMinusDariMap_(plusMap, minusMap);
+}
+
+function plusMinusDariMap_(plusMap, minusMap) {
   function toItems(map) {
-    const items = Object.keys(map).map(function(article) {
-      const e = map[article];
+    const items = Object.keys(map || {}).map(function(article) {
+      const e = map[article] || {};
       const lokasiOrder = Object.keys(e.lokasiCounts || {});
       return {
-        article: article,
-        description: e.description,
-        qty: e.qty,
+        article: String(article),
+        description: String(e.description == null ? '' : e.description),
+        qty: Number(e.qty) || 0,
         lokasi: lokasiOrder.join(', '),
         jumlahLokasi: lokasiOrder.length
       };
@@ -437,8 +446,6 @@ function getPlusMinusSummaryFromAntrian_(username) {
       items: items
     };
   }
-  const plusMap = readAntrianValue_(PLUSMINUS_KEY_PLUS_, {}, username);
-  const minusMap = readAntrianValue_(PLUSMINUS_KEY_MINUS_, {}, username);
   return {
     plus: toItems(plusMap),
     minus: toItems(minusMap)
@@ -518,7 +525,7 @@ function rebuildAntrianAktifMenu_() {
   ui.alert('Selesai. Antrian Pending: ' + hasil.pendingTotal + ' item (' + hasil.jumlahValidator + ' validator). ' + 'SKU Plus aktif: ' + hasil.jumlahSkuPlus + ', SKU Minus aktif: ' + hasil.jumlahSkuMinus + '.');
 }
 
-const API_BRIDGE_ALLOW_ = [ 'getAppVersion', 'getUserRole', 'getHomeSummary', 'getPlusMinusSummary', 'getMyPendingCount', 'getPendingValidasiCount', 'getMyPendingTasks', 'submitCount', 'getPendingValidasi', 'submitValidasi', 'getEquipmentReadyDefaults', 'getAssignableUsers', 'importRawData', 'getImportProgress', 'getDashboardData', 'getErrorAnalysisDetail', 'getUserDashboardDetail', 'getPendingBacklog', 'getBacklogDetailByDate', 'getProblemItemsDetail', 'getAnalyticsRootCauseData', 'getAnalyticsRootCauseDetail', 'getInvestigasiFormData', 'getOpenTasks', 'updateTaskStatus', 'getTaskLog', 'getPlusMinusCandidates', 'closePlusMinusPair', 'getSettingOverflow', 'saveSettingOverflow', 'setOverflowForceOffToday', 'getDaftarUserMaster', 'tambahUserMaster', 'updateRoleUserMaster', 'setStatusUserMaster', 'getDaftarAksesSetting', 'tambahAksesSetting', 'hapusAksesSetting', 'getLevelAssignmentConfig', 'saveLevelAssignmentMatrix', 'setModeAssignment', 'getLogPerubahanConfig', 'getDaftarFacility', 'tambahFacility', 'daftarkanFacilityExisting', 'updateNamaFacility', 'setStatusFacility', 'assignUserKeFacility', 'getDaftarUserFacilityAssignment', 'importLokasiAktif', 'getDaftarLokasiAktif', 'copyLokasiDariFacility', 'setDeveloperActiveFacility' ];
+const API_BRIDGE_ALLOW_ = [ 'getAppVersion', 'getUserRole', 'getHomeSummary', 'getPlusMinusSummary', 'getMyPendingCount', 'getPendingValidasiCount', 'getMyPendingTasks', 'submitCount', 'getPendingValidasi', 'submitValidasi', 'getEquipmentReadyDefaults', 'getAssignableUsers', 'importRawData', 'getImportProgress', 'getDashboardData', 'getErrorAnalysisDetail', 'getUserDashboardDetail', 'getPendingBacklog', 'getBacklogDetailByDate', 'getProblemItemsDetail', 'getAnalyticsRootCauseData', 'getAnalyticsRootCauseDetail', 'getInvestigasiFormData', 'getOpenTasks', 'updateTaskStatus', 'getTaskLog', 'getPlusMinusCandidates', 'closePlusMinusPair', 'getSettingOverflow', 'saveSettingOverflow', 'setOverflowForceOffToday', 'getDaftarUserMaster', 'tambahUserMaster', 'updateRoleUserMaster', 'setStatusUserMaster', 'getDaftarAksesSetting', 'tambahAksesSetting', 'hapusAksesSetting', 'getLevelAssignmentConfig', 'saveLevelAssignmentMatrix', 'setModeAssignment', 'getLogPerubahanConfig', 'getDaftarFacility', 'tambahFacility', 'daftarkanFacilityExisting', 'updateNamaFacility', 'setStatusFacility', 'assignUserKeFacility', 'getDaftarUserFacilityAssignment', 'importLokasiAktif', 'getDaftarLokasiAktif', 'copyLokasiDariFacility', 'setDeveloperActiveFacility', 'getHomeBundle', 'getUploadFormData', 'getProductivity', 'getOpenTaskCount' ];
 
 function apiBridge_(req) {
   if (!req || !Array.isArray(req.args)) return null;
@@ -553,6 +560,311 @@ function apiBridge_(req) {
     }
   }
   return ContentService.createTextOutput(JSON.stringify(out)).setMimeType(ContentService.MimeType.JSON);
+}
+
+function tagWib_(d) {
+  return new Date(d.getTime() + 7 * 36e5).toISOString().slice(0, 10);
+}
+
+function bacaAntrianSemua_(username) {
+  const sheet = getAntrianAktifSheet_(username);
+  const last = sheet.getLastRow();
+  const map = {};
+  if (last >= 2) {
+    sheet.getRange(2, 1, last - 1, 2).getValues().forEach(function(r) {
+      map[String(r[0])] = r[1];
+    });
+  }
+  return map;
+}
+
+function getHomeBundle(username) {
+  const info = requireRole_(username, ALL_CYCLE_LIKE_ROLES);
+  const isAdmin = info.role === 'admin' || info.role === 'developer';
+  const isInventory = info.role === 'inventory';
+  const now = new Date;
+  const today = Utilities.formatDate(now, 'Asia/Jakarta', 'yyyy-MM-dd');
+  const out = {
+    role: info.role,
+    version: APP_VERSION,
+    lastUpdated: Utilities.formatDate(now, 'Asia/Jakarta', 'dd/MM/yyyy HH:mm'),
+    serverTime: now.getTime(),
+    hariIni: today,
+    totalCycleHariIni: 0,
+    selesaiHariIni: 0,
+    belumValidasi: 0,
+    myPending: 0,
+    outstanding: 0,
+    pendingValidasi: 0,
+    openTasks: 0,
+    plusMinus: null,
+    perPetugas: [],
+    belumDitugaskan: 0
+  };
+  if (!requireUserFacility_(username)) {
+    out.tanpaFacility = true;
+    return out;
+  }
+  catatAksesLog_(username, info);
+  const todayRows = readRingkasanHarianRows_('daily', today, username);
+  const petugasRaw = todayRows.length ? parseJsonSafe_(todayRows[0][7], {}) : {};
+  if (todayRows.length) {
+    if (isAdmin) {
+      out.totalCycleHariIni = Number(todayRows[0][1]) || 0;
+      out.selesaiHariIni = (Number(todayRows[0][2]) || 0) + (Number(todayRows[0][3]) || 0);
+    } else {
+      const mine = petugasRaw[info.displayName];
+      if (mine) {
+        out.totalCycleHariIni = mine.rawTotal || 0;
+        out.selesaiHariIni = mine.rawSelesai || 0;
+      }
+    }
+  }
+  if (isAdmin || isInventory) {
+    const antrian = bacaAntrianSemua_(username);
+    const kunci = isAdmin ? 'pending_total' : 'pending_validator:' + info.displayName;
+    out.belumValidasi = parseJsonSafe_(antrian[kunci], {
+      count: 0
+    }).count || 0;
+    out.pendingValidasi = out.belumValidasi;
+    out.plusMinus = plusMinusDariMap_(parseJsonSafe_(antrian[PLUSMINUS_KEY_PLUS_], {}), parseJsonSafe_(antrian[PLUSMINUS_KEY_MINUS_], {}));
+  }
+  const sisaPerPetugas = {};
+  const sheet = getSheet_(username);
+  const lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    const me = String(info.displayName || '').trim();
+    sheet.getRange(2, 10, lastRow - 1, 2).getValues().forEach(function(r) {
+      if (r[1] !== 'Pending') return;
+      const nama = String(r[0] || '').trim();
+      out.outstanding++;
+      if (!nama) {
+        out.belumDitugaskan++;
+        return;
+      }
+      if (nama === me) out.myPending++;
+      sisaPerPetugas[nama] = (sisaPerPetugas[nama] || 0) + 1;
+    });
+  }
+  if (!isAdmin) {
+    out.outstanding = out.myPending;
+    out.belumDitugaskan = 0;
+  }
+  if (isAdmin || isInventory) {
+    const riwayat = getRiwayatSheet_(username);
+    const lastRiwayat = riwayat.getLastRow();
+    if (lastRiwayat >= 2) {
+      const aktif = TASK_STATUS_FLOW.slice(0, TASK_STATUS_FLOW.length - 1);
+      riwayat.getRange(2, 19, lastRiwayat - 1, 1).getValues().forEach(function(r) {
+        if (aktif.indexOf(r[0]) !== -1) out.openTasks++;
+      });
+    }
+  }
+  if (isAdmin) {
+    const nama = {};
+    Object.keys(petugasRaw).forEach(function(k) {
+      nama[k] = true;
+    });
+    Object.keys(sisaPerPetugas).forEach(function(k) {
+      nama[k] = true;
+    });
+    out.perPetugas = Object.keys(nama).map(function(k) {
+      const r = petugasRaw[k] || {};
+      return {
+        nama: k,
+        dihitung: Number(r.rawTotal) || 0,
+        final: Number(r.rawSelesai) || 0,
+        sisa: sisaPerPetugas[k] || 0
+      };
+    }).sort(function(a, b) {
+      return b.sisa - a.sisa || b.dihitung - a.dihitung || (a.nama < b.nama ? -1 : 1);
+    });
+  }
+  return out;
+}
+
+function getUploadFormData(username) {
+  requireRole_(username, [ 'admin', 'developer' ]);
+  const facInfo = requireUserFacility_(username);
+  if (!facInfo) {
+    return {
+      users: [],
+      equipment: {
+        reachTruck: 0,
+        tangga: 0
+      },
+      lokasiAktif: 0,
+      modeAssignment: 'legacy',
+      facilityId: '',
+      facilityName: '',
+      tanpaFacility: true
+    };
+  }
+  return {
+    users: getAssignableUsers_(facInfo.id),
+    equipment: getEquipmentReadyDefaults_(),
+    lokasiAktif: Object.keys(getActiveLocations_(username)).length,
+    modeAssignment: getLevelAssignmentMeta_(getLevelAssignmentSheet_(username)).mode,
+    facilityId: facInfo.id,
+    facilityName: facInfo.nama
+  };
+}
+
+function getProductivity(tanggal, username, tzMenit) {
+  requireRole_(username, [ 'admin', 'developer' ]);
+  const today = Utilities.formatDate(new Date, 'Asia/Jakarta', 'yyyy-MM-dd');
+  const tgl = String(tanggal || '').trim() || today;
+  const hasil = {
+    tanggal: tgl,
+    hariIni: tgl === today,
+    ringkasan: {
+      totalItem: 0,
+      petugasAktif: 0,
+      perJam: 0,
+      sisa: 0,
+      totalValidasi: 0
+    },
+    petugas: [],
+    validator: [],
+    perJam: []
+  };
+  const facInfo = requireUserFacility_(username);
+  if (!facInfo) {
+    hasil.tanpaFacility = true;
+    return hasil;
+  }
+  const tz = Number(tzMenit);
+  const offMs = (tzMenit === null || tzMenit === undefined || tzMenit === '' || isNaN(tz) ? 420 : tz) * 6e4;
+  const isDate = function(v) {
+    return Object.prototype.toString.call(v) === '[object Date]';
+  };
+  const kunciJam = function(t) {
+    return Math.floor((t + offMs) / 36e5);
+  };
+  const petugas = {}, validator = {}, perJam = {};
+  const sheet = getRiwayatSheet_(username);
+  const lastRow = sheet.getLastRow();
+  if (lastRow >= 2) {
+    sheet.getRange(2, 2, lastRow - 1, 16).getValues().forEach(function(r) {
+      const w = r[14];
+      const tagBaris = isDate(w) ? tagWib_(w) : String(r[0]);
+      if (tagBaris === tgl) {
+        const nama = String(r[6] || '').trim() || '(tanpa nama)';
+        if (!petugas[nama]) petugas[nama] = {
+          nama: nama,
+          total: 0,
+          hit: 0,
+          selisih: 0,
+          mulai: 0,
+          akhir: 0,
+          jam: {}
+        };
+        const p = petugas[nama];
+        p.total++;
+        if (r[9] === 'HIT') p.hit++; else p.selisih++;
+        if (isDate(w)) {
+          const t = w.getTime(), k = kunciJam(t);
+          if (!p.mulai || t < p.mulai) p.mulai = t;
+          if (t > p.akhir) p.akhir = t;
+          p.jam[k] = true;
+          perJam[k] = (perJam[k] || 0) + 1;
+        }
+      }
+      const wv = r[15], namaV = String(r[11] || '').trim();
+      if (namaV && isDate(wv) && tagWib_(wv) === tgl) {
+        if (!validator[namaV]) validator[namaV] = {
+          nama: namaV,
+          total: 0,
+          hit: 0,
+          mulai: 0,
+          akhir: 0
+        };
+        const v = validator[namaV], tv = wv.getTime();
+        v.total++;
+        if (r[13] === 'HIT') v.hit++;
+        if (!v.mulai || tv < v.mulai) v.mulai = tv;
+        if (tv > v.akhir) v.akhir = tv;
+      }
+    });
+  }
+  const sisa = {};
+  if (tgl === today) {
+    const dc = getSheet_(username);
+    const dcLast = dc.getLastRow();
+    if (dcLast >= 2) {
+      dc.getRange(2, 10, dcLast - 1, 2).getValues().forEach(function(r) {
+        if (r[1] !== 'Pending') return;
+        const nama = String(r[0] || '').trim();
+        if (nama) sisa[nama] = (sisa[nama] || 0) + 1;
+      });
+    }
+  }
+  const peran = {};
+  getAssignableUsers_(facInfo.id).forEach(function(u) {
+    peran[u.username] = u.role;
+  });
+  Object.keys(sisa).forEach(function(nama) {
+    if (!petugas[nama]) petugas[nama] = {
+      nama: nama,
+      total: 0,
+      hit: 0,
+      selisih: 0,
+      mulai: 0,
+      akhir: 0,
+      jam: {}
+    };
+  });
+  let totalItem = 0, totalJamOrang = 0;
+  hasil.petugas = Object.keys(petugas).map(function(k) {
+    const p = petugas[k];
+    const jamAktif = Object.keys(p.jam).length;
+    totalItem += p.total;
+    totalJamOrang += jamAktif;
+    return {
+      nama: p.nama,
+      role: peran[p.nama] || '',
+      total: p.total,
+      hit: p.hit,
+      selisih: p.selisih,
+      mulai: p.mulai,
+      akhir: p.akhir,
+      jamAktif: jamAktif,
+      perJam: jamAktif ? Math.round(p.total / jamAktif * 10) / 10 : 0,
+      sisa: sisa[p.nama] || 0
+    };
+  }).sort(function(a, b) {
+    return b.total - a.total || b.sisa - a.sisa || (a.nama < b.nama ? -1 : 1);
+  });
+  hasil.validator = Object.keys(validator).map(function(k) {
+    return validator[k];
+  }).sort(function(a, b) {
+    return b.total - a.total;
+  });
+  const kunci = Object.keys(perJam).map(Number).sort(function(a, b) {
+    return a - b;
+  });
+  if (kunci.length) {
+    for (let k = kunci[0]; k <= kunci[kunci.length - 1]; k++) {
+      hasil.perJam.push({
+        jam: (k % 24 + 24) % 24,
+        total: perJam[k] || 0
+      });
+    }
+  }
+  hasil.ringkasan = {
+    totalItem: totalItem,
+    petugasAktif: hasil.petugas.filter(function(p) {
+      return p.total > 0;
+    }).length,
+    perJam: totalJamOrang ? Math.round(totalItem / totalJamOrang * 10) / 10 : 0,
+    sisa: Object.keys(sisa).reduce(function(s, k) {
+      return s + sisa[k];
+    }, 0),
+    totalValidasi: hasil.validator.reduce(function(s, v) {
+      return s + v.total;
+    }, 0)
+  };
+  return hasil;
 }
 
 function hitungCutoffArchive_() {
@@ -632,7 +944,7 @@ function cekArchiveRiwayatLama_() {
   ui.alert('Selesai. ' + hasil.archived + ' baris dipindah ke "' + RIWAYAT_ARCHIVE_SHEET_NAME + '". Sisa ' + hasil.sisa + ' baris aktif di Riwayat.');
 }
 
-const APP_VERSION = 'v8.29.3';
+const APP_VERSION = 'v8.31.1-apk2';
 
 const MASTER_SHEET_NAME = 'Master';
 
@@ -700,7 +1012,7 @@ const CONFIG_AKSES_SETTING_SHEET_NAME = 'Config_Akses_Setting';
 
 const CONFIG_AKSES_SETTING_HEADERS = [ 'NIK', 'Nama', 'Tanggal_Ditambahkan' ];
 
-const CYCLE_ROLES = [ 'outbound', 'storing', 'inbound' ];
+const CYCLE_ROLES = [ 'outbound', 'storing', 'inbound', 'lp', 'maintenance' ];
 
 const CYCLE_ROLES_WITH_LEGACY = CYCLE_ROLES.concat([ 'cycle' ]);
 
@@ -748,11 +1060,11 @@ const QUEUE_COUNTER_HEADERS = [ 'Timestamp', 'Key', 'Delta' ];
 
 const SUBMIT_QUEUE_SHEET_NAME = 'Queue_Submit_Cycle';
 
-const SUBMIT_QUEUE_HEADERS = [ 'Timestamp', 'No', 'NamaPetugas', 'QtyCount', 'FacilityId' ];
+const SUBMIT_QUEUE_HEADERS = [ 'Timestamp', 'No', 'NamaPetugas', 'QtyCount', 'FacilityId', 'WaktuHitung' ];
 
 const VALIDASI_QUEUE_SHEET_NAME = 'Queue_Validasi';
 
-const VALIDASI_QUEUE_HEADERS = [ 'Timestamp', 'Id', 'NamaValidator', 'QtyValidasi', 'FacilityId' ];
+const VALIDASI_QUEUE_HEADERS = [ 'Timestamp', 'Id', 'NamaValidator', 'QtyValidasi', 'FacilityId', 'WaktuHitung' ];
 
 const TASK_QUEUE_SHEET_NAME = 'Queue_Task_Investigasi';
 
@@ -839,7 +1151,7 @@ function findDataCountRowAndValues_(sheet, no) {
   return null;
 }
 
-function submitCount(no, namaPetugas, qtyCount) {
+function submitCount(no, namaPetugas, qtyCount, waktuKlien, facKlien) {
   requireRole_(namaPetugas, ALL_CYCLE_LIKE_ROLES);
   const aktual = Number(qtyCount);
   if (qtyCount === '' || qtyCount === null || qtyCount === undefined || isNaN(aktual) || aktual < 0) {
@@ -852,11 +1164,18 @@ function submitCount(no, namaPetugas, qtyCount) {
   if (!facInfo) {
     return {
       success: false,
-      message: 'Akun Anda belum di-assign ke facility manapun (atau facility-nya nonaktif).'
+      message: PESAN_TANPA_FACILITY_
+    };
+  }
+  if (!facilityKlienCocok_(facKlien, facInfo)) {
+    return {
+      success: false,
+      kode: 'FACILITY_BERUBAH',
+      message: PESAN_FACILITY_BERUBAH_
     };
   }
   try {
-    queueSubmitPayload_(no, namaPetugas, aktual, facInfo.id);
+    queueSubmitPayload_(no, namaPetugas, aktual, facInfo.id, waktuKlienSah_(waktuKlien));
   } catch (e) {
     return {
       success: false,
@@ -1289,7 +1608,7 @@ function getErrorAnalysis(periodType, periodValue, requesterUsername) {
 }
 
 function getErrorAnalysisDetail(alasan, periodType, periodValue, requesterUsername) {
-  requireRole_(requesterUsername, [ 'admin' ]);
+  requireRole_(requesterUsername, [ 'admin', 'developer' ]);
   const sheet = getRiwayatSheet_(requesterUsername);
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
@@ -1360,7 +1679,7 @@ function getDashboardData(periodType, periodValue, trendCount, requesterUsername
 }
 
 function getProblemItemsDetail(periodType, periodValue, requesterUsername) {
-  requireRole_(requesterUsername, [ 'admin' ]);
+  requireRole_(requesterUsername, [ 'admin', 'developer' ]);
   const sheet = getRiwayatSheet_(requesterUsername);
   const lastRow = sheet.getLastRow();
   if (lastRow < 2) return [];
@@ -1730,12 +2049,14 @@ function getUserFacilityAssignmentSheet_() {
 }
 
 function clearFacilityCache_() {
+  _memUserFacility_ = {};
   try {
     CacheService.getScriptCache().remove(CACHE_FACILITY_LIST);
   } catch (e) {}
 }
 
 function clearUserFacilityCache_(username) {
+  delete _memUserFacility_[String(username || '').trim().toLowerCase()];
   try {
     CacheService.getScriptCache().remove(CACHE_USER_FACILITY_PREFIX + String(username || '').toLowerCase());
   } catch (e) {}
@@ -2137,6 +2458,13 @@ function getFacilityInfoById_(facilityId) {
 function getUserFacility(username) {
   const uname = String(username || '').trim().toLowerCase();
   if (!uname) return null;
+  if (Object.prototype.hasOwnProperty.call(_memUserFacility_, uname)) return _memUserFacility_[uname];
+  const info = getUserFacilityTanpaMemo_(uname);
+  _memUserFacility_[uname] = info;
+  return info;
+}
+
+function getUserFacilityTanpaMemo_(uname) {
   if (isUsernameRoleDeveloper_(uname)) {
     const overrideId = CacheService.getScriptCache().get(CACHE_DEV_ACTIVE_FACILITY_PREFIX + uname);
     if (overrideId) {
@@ -2203,6 +2531,7 @@ function setDeveloperActiveFacility(username, facilityId) {
   }
   const cacheKey = CACHE_DEV_ACTIVE_FACILITY_PREFIX + uname;
   const id = String(facilityId || '').trim();
+  clearUserRoleCache_(uname);
   if (!id) {
     CacheService.getScriptCache().remove(cacheKey);
     return {
@@ -2325,6 +2654,7 @@ function assignUserKeFacility(username, targetUsername, facilityId) {
     }
   }
   clearUserFacilityCache_(targetUname);
+  clearUserRoleCache_(targetUname);
   catatLogPerubahanConfig_(username, 'Facility Management', 'User "' + targetUname + '" di-assign ke facility "' + namaFacility + '".');
   return {
     success: true,
@@ -2389,6 +2719,15 @@ function getOperasionalSpreadsheet_(username) {
     catatLogSistem_('Facility DB', 'Gagal membuka spreadsheet facility "' + (facInfo.nama || facInfo.id) + '" (' + e.message + '). Fallback ke spreadsheet aktif.');
     return SpreadsheetApp.getActiveSpreadsheet();
   }
+}
+
+const PESAN_TANPA_FACILITY_ = 'Akun Anda belum punya facility aktif. Minta admin mengaturnya di Config.';
+
+const PESAN_FACILITY_BERUBAH_ = 'Facility akun ini berubah sebelum hasil terkirim. Hitung ulang dari daftar tugas yang baru.';
+
+function facilityKlienCocok_(facKlien, facInfo) {
+  const f = String(facKlien === null || facKlien === undefined ? '' : facKlien).trim();
+  return !f || f === '-' || f === String(facInfo.id);
 }
 
 function requireUserFacility_(username) {
@@ -2542,6 +2881,7 @@ function importLokasiAktif(username, facilityId, daftarLokasi, gantiSemua) {
     lokasiSheet.getRange(startRow, 1, lokasiBaru.length, 1).setValues(lokasiBaru);
     lokasiBersih.length = lokasiBaru.length;
   }
+  clearActiveLocationsCache_(facId);
   catatLogPerubahanConfig_(username, 'Facility Management', 'Import lokasi aktif ke facility "' + namaFacility + '": ' + (gantiSemua ? 'GANTI SEMUA' : 'TAMBAH') + ', ' + lokasiBersih.length + ' lokasi.');
   return {
     success: true,
@@ -2917,7 +3257,7 @@ function buildAssignedRowsEquipmentAware_(items, startingNo, tanggalUpload, reac
   let output = [];
   if (reachTruckItems.length) {
     if (!reachTruckUsers.length) {
-      warnings.push(reachTruckItems.length + ' item Level 5-6 (Reach Truck) TIDAK dibagi karena tidak ada user role Storing yang dicentang.');
+      warnings.push(reachTruckItems.length + ' item Level 5-6 (reach truck) tidak dibagi karena tidak ada petugas Storing yang dipilih.');
     } else {
       const rows1 = buildAssignedRows_(reachTruckItems, no, tanggalUpload, reachTruckUsers, existingBacklogEffort, compareLocationEvenOddSection_);
       output = output.concat(rows1);
@@ -2926,7 +3266,7 @@ function buildAssignedRowsEquipmentAware_(items, startingNo, tanggalUpload, reac
   }
   if (tanggaItems.length) {
     if (!tanggaUsers.length) {
-      warnings.push(tanggaItems.length + ' item Level 3-4 (Tangga Pesawat) TIDAK dibagi karena Tangga Ready = 0.');
+      warnings.push(tanggaItems.length + ' item Level 3-4 (tangga pesawat) tidak dibagi karena jumlah tangga pesawat 0.');
     } else {
       const rows2 = buildAssignedRows_(tanggaItems, no, tanggalUpload, tanggaUsers, existingBacklogEffort, compareLocationEvenOddSection_);
       output = output.concat(rows2);
@@ -2935,7 +3275,7 @@ function buildAssignedRowsEquipmentAware_(items, startingNo, tanggalUpload, reac
   }
   if (bawahItems.length) {
     if (!bawahUsers.length) {
-      warnings.push(bawahItems.length + ' item Level 1-2 (Bawah) TIDAK dibagi karena tidak ada petugas tersisa di luar slot Reach Truck/Tangga.');
+      warnings.push(bawahItems.length + ' item Level 1-2 tidak dibagi karena tidak ada petugas tersisa setelah reach truck dan tangga pesawat.');
     } else {
       const rows3 = buildAssignedRows_(bawahItems, no, tanggalUpload, bawahUsers, existingBacklogEffort);
       output = output.concat(rows3);
@@ -3023,11 +3363,11 @@ function importRawData(transaksiRawRows, stockRows, selectedUsernames, requester
   if (!facInfo) {
     return {
       success: false,
-      message: 'Akun Anda belum di-assign ke facility manapun (atau facility-nya nonaktif). Hubungi admin lain untuk set assignment facility Anda, atau kalau Anda Developer, pilih facility aktif dulu lewat Facility Switcher.'
+      message: PESAN_TANPA_FACILITY_
     };
   }
   const facilityId = facInfo.id;
-  const facilityName = facInfo.name;
+  const facilityName = facInfo.nama || facInfo.name || '';
   const assignableInFacility = getAssignableUsers_(facilityId);
   const assignableMap = {};
   assignableInFacility.forEach(function(u) {
@@ -3042,7 +3382,7 @@ function importRawData(transaksiRawRows, stockRows, selectedUsernames, requester
   if (userTidakValid.length > 0) {
     return {
       success: false,
-      message: 'User berikut TIDAK TERDAFTAR di facility "' + facilityName + '" atau tidak bisa diberi tugas: ' + userTidakValid.join(', ') + '. Pilih hanya user yang sudah di-assign ke facility ini.'
+      message: 'User berikut tidak terdaftar di facility "' + facilityName + '" atau tidak bisa diberi tugas: ' + userTidakValid.join(', ') + '. Muat ulang daftar petugas lalu pilih lagi.'
     };
   }
   const roleMap = getUserRoleMap_();
@@ -3057,13 +3397,13 @@ function importRawData(transaksiRawRows, stockRows, selectedUsernames, requester
   const bawahUsers = nonStoring.slice(m);
   const reachTruckReadyNum = Number(reachTruckReady) || 0;
   const modeAssignmentSaatIni = getLevelAssignmentMeta_(getLevelAssignmentSheet_(requesterUsername)).mode;
-  const reachTruckNote = modeAssignmentSaatIni === 'legacy' && reachTruckReadyNum && reachTruckReadyNum !== reachTruckUsers.length ? ' (Catatan: Input Reach Truck Ready (' + reachTruckReadyNum + ') beda dari jumlah user role Storing yang dicentang (' + reachTruckUsers.length + ') -- yang dipakai tetap semua user Storing yang dicentang, input cuma referensi.)' : '';
+  const reachTruckNote = modeAssignmentSaatIni === 'legacy' && reachTruckReadyNum && reachTruckReadyNum !== reachTruckUsers.length ? 'Jumlah reach truck (' + reachTruckReadyNum + ') berbeda dari jumlah petugas Storing yang dipilih (' + reachTruckUsers.length + '). Semua petugas Storing yang dipilih tetap mendapat tugas Level 5-6.' : '';
   reportProgress_(jobId, 15, 'Memuat lokasi aktif facility');
   const activeLocations = getActiveLocations_(requesterUsername);
   if (Object.keys(activeLocations).length === 0) {
     return {
       success: false,
-      message: 'Tidak ada lokasi aktif untuk facility "' + facilityName + '". Import lokasi aktif terlebih dahulu di Config > Facility Management.'
+      message: 'Tidak ada lokasi aktif untuk facility "' + facilityName + '". Impor lokasi aktif dulu lewat Config, tab Facility.'
     };
   }
   const facLock = acquireFacilityLock_(facilityId, 2e4);
@@ -3184,7 +3524,9 @@ function importRawData(transaksiRawRows, stockRows, selectedUsernames, requester
         success: true,
         message: mergedCount + ' item digabung dengan tugas Pending yang sudah ada (qty ditambahkan). Tidak ada tugas baru dibuat.',
         merged: mergedCount,
-        ditugaskan: 0
+        ditugaskan: 0,
+        peringatan: [],
+        catatan: []
       };
     }
     const tulis = writeItemsToSheet_(items, reachTruckUsers, tanggaUsers, bawahUsers, usernames, roleMap, requesterUsername);
@@ -3211,6 +3553,10 @@ function importRawData(transaksiRawRows, stockRows, selectedUsernames, requester
       skippedBlankLokasi: skippedBlankLokasi,
       skippedOtherType: skippedOtherType,
       warning: warningGabungan,
+      peringatan: tulis.warnings || [],
+      catatan: [ reachTruckNote, tulis.overflowPesan ].filter(function(x) {
+        return x;
+      }),
       perluKonfirmasi: !!(tulis.warnings && tulis.warnings.length),
       modeAssignment: tulis.modeAssignment,
       facilityName: facilityName
@@ -3241,11 +3587,11 @@ const LEVEL_ASSIGNMENT_META_MAKSGRUP_KEY_ = '_meta_maks_grup_alat_';
 
 const LEVEL_ASSIGNMENT_DEFAULTS_ = {
   bawah: {
-    roles: [ 'outbound', 'inbound', 'inventory', 'admin' ],
+    roles: [ 'outbound', 'inbound', 'lp', 'maintenance', 'inventory', 'admin' ],
     mode: 'pemerataan'
   },
   tangga: {
-    roles: [ 'outbound', 'inbound', 'inventory', 'admin' ],
+    roles: [ 'outbound', 'inbound', 'lp', 'maintenance', 'inventory', 'admin' ],
     mode: 'pemerataan'
   },
   reach_truck: {
@@ -3522,7 +3868,7 @@ function buildAssignedRowsMatrixAware_(items, startingNo, tanggalUpload, selecte
     const produktivitas = prod[GRUP_ALAT_TO_LEVEL_GROUP_KEY_[g.key]] || 1;
     const pool = bangunPoolGrupAlat_(grupConfig, selectedUsernames, usernameRoleMap, grupItems.length, produktivitas);
     if (!pool.length) {
-      warnings.push(grupItems.length + ' item ' + g.label + ' TIDAK dibagi karena tidak ada user dengan role yang eligible (cek Config > Pembagian Tugas).');
+      warnings.push(grupItems.length + ' item ' + g.label + ' tidak dibagi karena tidak ada petugas terpilih dengan peran yang sesuai. Periksa Config, tab Pembagian tugas.');
       return;
     }
     const compareFn = g.key === 'bawah' ? undefined : compareLocationEvenOddSection_;
@@ -3530,16 +3876,26 @@ function buildAssignedRowsMatrixAware_(items, startingNo, tanggalUpload, selecte
     output = output.concat(rows);
     no += rows.length;
   });
+  const peranBerGrup = {};
+  matrix.forEach(function(m) {
+    (m.roles || []).forEach(function(r) {
+      peranBerGrup[r] = true;
+    });
+  });
+  const tanpaGrup = selectedUsernames.filter(function(u) {
+    return !peranBerGrup[usernameRoleMap[String(u).toLowerCase()]];
+  });
+  const catatanTanpaGrup = tanpaGrup.length ? tanpaGrup.length + ' petugas terpilih tidak mendapat tugas karena perannya belum dicentang di Config, tab Pembagian tugas: ' + tanpaGrup.join(', ') + '.' : '';
   return {
     rows: output,
     warnings: warnings,
-    overflowPesan: '',
+    overflowPesan: catatanTanpaGrup,
     overflowCount: 0
   };
 }
 
 function doGet(e) {
-  return HtmlService.createHtmlOutput('<div style="font-family:sans-serif;padding:24px;line-height:1.5">' + '<h3>Cycle Transaksi — server aktif (' + APP_VERSION + ')</h3>' + '<p>Buka lewat aplikasi Android Cycle Transaksi. Salin alamat halaman ini (yang berakhiran <b>/exec</b>) ' + 'ke menu <b>Atur server</b> di layar masuk aplikasi.</p></div>').setTitle('Cycle Transaksi').addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  return HtmlService.createHtmlOutput('<div style="font-family:sans-serif;padding:24px;line-height:1.5">' + '<h3>Cycle Transaksi — server aktif (' + APP_VERSION + ')</h3>' + '<p>Halaman ini adalah server aplikasi Android Cycle Transaksi. Alamat halaman ini (yang berakhiran <b>/exec</b>) ' + 'ditanam di aplikasi oleh pengembang; pengguna cukup masuk dengan NIK.</p></div>').setTitle('Cycle Transaksi').addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
 
 function include(filename) {
@@ -3587,8 +3943,22 @@ function debugCekAksesConfig() {
 }
 
 function clearMasterCache_() {
-  _memUserRoleCache_ = {};
-  CacheService.getScriptCache().removeAll([ 'activeLocations', 'masterUsernames', 'assignableUsers', 'levelSettings', 'kategoriMapping', 'inventoryUsers' ]);
+  resetMemEksekusi_();
+  const kunci = [ 'activeLocations', 'masterUsernames', 'assignableUsers', 'levelSettings', 'kategoriMapping', 'inventoryUsers' ];
+  try {
+    const fs = getFacilitySheet_();
+    const last = fs.getLastRow();
+    if (last >= 2) {
+      fs.getRange(2, 1, last - 1, 1).getValues().forEach(function(r) {
+        const id = String(r[0] || '').trim();
+        if (id) {
+          kunci.push('assignableUsers_fac_' + id);
+          kunci.push('inventoryUsers_fac_' + id);
+        }
+      });
+    }
+  } catch (e) {}
+  CacheService.getScriptCache().removeAll(kunci);
   clearFacilityCache_();
 }
 
@@ -3779,6 +4149,7 @@ const API_ACTIONS = {
 
 function doPost(e) {
   try {
+    resetMemEksekusi_();
     const req = JSON.parse(e.postData.contents || '{}');
     const viaApk = apiBridge_(req);
     if (viaApk) return viaApk;
@@ -3807,7 +4178,8 @@ function isBarisUserAktif_(statusRaw) {
 
 function getActiveLocations_(username) {
   const cache = CacheService.getScriptCache();
-  const cacheKey = username ? 'activeLocations_' + String(username).toLowerCase() : 'activeLocations';
+  const facCache = username ? getUserFacility(username) : null;
+  const cacheKey = facCache ? 'activeLocations_fac_' + facCache.id : username ? 'activeLocations_' + String(username).toLowerCase() : 'activeLocations';
   const cached = cache.get(cacheKey);
   if (cached) return JSON.parse(cached);
   const set = {};
@@ -3845,12 +4217,30 @@ function getActiveLocations_(username) {
   return set;
 }
 
+function clearActiveLocationsCache_(facilityId) {
+  try {
+    CacheService.getScriptCache().removeAll([ 'activeLocations', 'activeLocations_fac_' + facilityId ]);
+  } catch (e) {}
+}
+
 var _memUserRoleCache_ = {};
+
+var _memIsDeveloper_ = {};
+
+var _memUserFacility_ = {};
+
+function resetMemEksekusi_() {
+  _memUserRoleCache_ = {};
+  _memIsDeveloper_ = {};
+  _memUserFacility_ = {};
+}
 
 function clearUserRoleCache_(username) {
   try {
     const uname = String(username || '').trim().toLowerCase();
     delete _memUserRoleCache_[uname];
+    delete _memIsDeveloper_[uname];
+    delete _memUserFacility_[uname];
     CacheService.getScriptCache().remove('userRole_' + uname);
   } catch (e) {}
 }
@@ -3888,7 +4278,10 @@ function getUserRole(username) {
             if (facId && typeof getFacilityInfoById_ === 'function') {
               facInfo = getFacilityInfoById_(facId);
             }
-            if (!facInfo && typeof getUserFacility === 'function') {}
+            if (role === 'developer' && typeof getUserFacility === 'function') {
+              const facDev = getUserFacility(u);
+              if (facDev) facInfo = facDev;
+            }
             const result = {
               role: role,
               displayName: u,
@@ -4353,19 +4746,39 @@ function isNikPunyaAksesSetting_(username) {
 }
 
 function isUsernameRoleDeveloper_(usernameLowercase) {
-  const sheet = getMasterSheet_();
-  if (!sheet) return false;
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return false;
-  const values = sheet.getRange(2, 3, lastRow - 1, 2).getValues();
-  for (let i = 0; i < values.length; i++) {
-    const u = String(values[i][0] || '').trim().toLowerCase();
-    if (u === usernameLowercase) {
-      const roleRaw = String(values[i][1] || '').trim().toLowerCase();
-      return roleRaw === 'developer' || roleRaw === 'dev' || roleRaw === 'dewa';
+  if (Object.prototype.hasOwnProperty.call(_memIsDeveloper_, usernameLowercase)) return _memIsDeveloper_[usernameLowercase];
+  const peranDev = function(roleRaw) {
+    const r = String(roleRaw || '').trim().toLowerCase();
+    return r === 'developer' || r === 'dev' || r === 'dewa';
+  };
+  let hasil = false, ketemu = false;
+  const mu = typeof getMasterUserSheetWithFallback_ === 'function' ? getMasterUserSheetWithFallback_() : null;
+  const muLast = mu ? mu.getLastRow() : 0;
+  if (muLast >= 2) {
+    const v = mu.getRange(2, 1, muLast - 1, 3).getValues();
+    for (let i = 0; i < v.length; i++) {
+      if (String(v[i][0] || '').trim().toLowerCase() === usernameLowercase) {
+        ketemu = true;
+        hasil = isBarisUserAktif_(v[i][2]) && peranDev(v[i][1]);
+        break;
+      }
     }
   }
-  return false;
+  if (!ketemu) {
+    const sheet = getMasterSheet_();
+    const lastRow = sheet ? sheet.getLastRow() : 0;
+    if (lastRow >= 2) {
+      const values = sheet.getRange(2, 3, lastRow - 1, 3).getValues();
+      for (let i = 0; i < values.length; i++) {
+        if (String(values[i][0] || '').trim().toLowerCase() === usernameLowercase) {
+          hasil = isBarisUserAktif_(values[i][2]) && peranDev(values[i][1]);
+          break;
+        }
+      }
+    }
+  }
+  _memIsDeveloper_[usernameLowercase] = hasil;
+  return hasil;
 }
 
 function getDaftarAksesSetting(requesterUsername) {
@@ -4379,6 +4792,10 @@ function getDaftarAksesSetting(requesterUsername) {
   const lastRow = sheet.getLastRow();
   const daftar = [];
   if (lastRow >= 2) {
+    let tz = 'Asia/Jakarta';
+    try {
+      tz = sheet.getParent().getSpreadsheetTimeZone() || tz;
+    } catch (e) {}
     const values = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
     values.forEach(function(r, idx) {
       const nik = String(r[0] || '').trim();
@@ -4387,7 +4804,7 @@ function getDaftarAksesSetting(requesterUsername) {
         rowIndex: idx + 2,
         nik: nik,
         nama: String(r[1] || '').trim(),
-        tanggal: String(r[2] || '').trim()
+        tanggal: Object.prototype.toString.call(r[2]) === '[object Date]' ? Utilities.formatDate(r[2], tz, 'yyyy-MM-dd') : String(r[2] || '').trim()
       });
     });
   }
@@ -4423,6 +4840,7 @@ function tambahAksesSetting(requesterUsername, nikBaru, namaBaru) {
     }
   }
   sheet.appendRow([ nik, String(namaBaru || '').trim(), todayJakarta_() ]);
+  clearUserRoleCache_(nik);
   catatLogPerubahanConfig_(requesterUsername, 'Akses Setting', 'Tambah akses NIK "' + nik + '".');
   return {
     success: true,
@@ -4452,6 +4870,7 @@ function hapusAksesSetting(requesterUsername, rowIndex, nikKonfirmasi) {
     };
   }
   sheet.deleteRow(rowIndex);
+  clearUserRoleCache_(actualNik);
   catatLogPerubahanConfig_(requesterUsername, 'Akses Setting', 'Cabut akses NIK "' + actualNik + '".');
   return {
     success: true,
@@ -5158,7 +5577,7 @@ function setupAwal() {
     clearMasterCache_();
   } catch (e) {}
   hasil.push('Lokasi_Aktif masih kosong: isi kolom A sheet "Lokasi_Aktif" (satu lokasi per baris) atau impor lewat menu Config di aplikasi.');
-  hasil.push('Langkah berikutnya: Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone), lalu salin URL /exec ke aplikasi.');
+  hasil.push('Langkah berikutnya: Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone), lalu kirim URL /exec ke pengembang aplikasi untuk ditanam.');
   const pesan = hasil.join('\n');
   Logger.log(pesan);
   try {
@@ -5168,6 +5587,7 @@ function setupAwal() {
 }
 
 function workerSemua() {
+  resetMemEksekusi_();
   const langkah = [ [ 'Submit', processSubmitQueue_ ], [ 'Validasi', processValidasiQueue_ ], [ 'Task', processTaskQueue_ ], [ 'Ringkasan', processDeferredQueueAllFacilities_ ] ];
   langkah.forEach(function(l) {
     try {
@@ -5468,9 +5888,9 @@ function findRiwayatRow_(sheet, id) {
   return -1;
 }
 
-function queueSubmitPayload_(no, namaPetugas, qtyCount, facilityId) {
+function queueSubmitPayload_(no, namaPetugas, qtyCount, facilityId, waktuHitung) {
   const sheet = getSubmitQueueSheet_();
-  appendRowLocked_(sheet, [ new Date, no, namaPetugas, qtyCount, facilityId ]);
+  appendRowLocked_(sheet, [ new Date, no, namaPetugas, qtyCount, facilityId, waktuHitung || '' ]);
 }
 
 function processSubmitQueue_() {
@@ -5519,7 +5939,7 @@ function processSubmitQueue_() {
         const namaPetugas = String(row[2] || '').trim();
         const qtyCount = row[3];
         try {
-          const result = processSingleQueuedSubmit_(no, namaPetugas, qtyCount, facilityId);
+          const result = processSingleQueuedSubmit_(no, namaPetugas, qtyCount, facilityId, waktuBarisAntrean_(row[5], row[0]));
           if (!result.success) {
             catatLogSistem_('Worker Submit', 'Skip No ' + no + ' (' + namaPetugas + '): ' + result.message);
           }
@@ -5538,7 +5958,7 @@ function processSubmitQueue_() {
   deleteProcessedQueueRows_(qSheet, processedRowNumbers);
 }
 
-function processSingleQueuedSubmit_(no, namaPetugas, qtyCount, facilityId) {
+function processSingleQueuedSubmit_(no, namaPetugas, qtyCount, facilityId, waktuHitung) {
   const aktual = Number(qtyCount);
   const sheet = getSheet_(namaPetugas);
   const itemData = findDataCountRowAndValues_(sheet, no);
@@ -5564,7 +5984,7 @@ function processSingleQueuedSubmit_(no, namaPetugas, qtyCount, facilityId) {
   const addWhoTransaksi = rowValues[15];
   const selisih = aktual - qtySystem;
   const hasilAwal = selisih === 0 ? 'HIT' : 'DISCREPANCY';
-  const waktu = new Date;
+  const waktu = waktuHitung || new Date;
   sheet.getRange(rowIndex, 10, 1, 6).setValues([ [ namaPetugas, 'Selesai', aktual, selisih, hasilAwal, waktu ] ]);
   const statusValidasi = hasilAwal === 'HIT' ? 'Tidak Perlu' : 'Pending';
   const hasilFinal = hasilAwal === 'HIT' ? 'HIT' : '';
@@ -5620,6 +6040,7 @@ function getOpenTasksData_(username) {
       statusTask: statusTask,
       picInvestigasi: row[23],
       addWhoTransaksi: row[25],
+      namaValidator: row[12],
       nameValidator: row[12],
       umurHari: umurHari,
       isCritical: umurHari > TASK_SLA_HARI,
@@ -5785,7 +6206,7 @@ function updateTaskStatus(id, namaUser, newStatus, catatan, kategori, picUsernam
   if (!facInfo) {
     return {
       success: false,
-      message: 'Akun Anda belum di-assign ke facility manapun (atau facility-nya nonaktif). Hubungi admin untuk set assignment facility. Kalau Anda Developer, pilih facility aktif dulu lewat Facility Switcher.'
+      message: PESAN_TANPA_FACILITY_
     };
   }
   try {
@@ -5874,7 +6295,7 @@ function closePlusMinusPair(minusTaskId, plusTaskId, namaUser, catatan, picUsern
   if (!facInfo) {
     return {
       success: false,
-      message: 'Akun Anda belum di-assign ke facility manapun (atau facility-nya nonaktif). Hubungi admin untuk set assignment facility. Kalau Anda Developer, pilih facility aktif dulu lewat Facility Switcher.'
+      message: PESAN_TANPA_FACILITY_
     };
   }
   const facLock = acquireFacilityLock_(facInfo.id);
@@ -6227,7 +6648,7 @@ function installTaskQueueTrigger_() {
   Logger.log('Trigger terpasang: processTaskQueue_ tiap 1 menit.');
 }
 
-const MASTER_ROLE_VALID_ = [ 'admin', 'inventory', 'outbound', 'storing', 'inbound', 'developer' ];
+const MASTER_ROLE_VALID_ = [ 'admin', 'inventory', 'outbound', 'storing', 'inbound', 'lp', 'maintenance', 'developer' ];
 
 function getDaftarUserMaster(requesterUsername) {
   if (!isNikPunyaAksesSetting_(requesterUsername)) {
@@ -6298,6 +6719,17 @@ function getDaftarUserMaster(requesterUsername) {
   };
 }
 
+const PESAN_KHUSUS_DEVELOPER_ = 'Akun dan peran Developer hanya bisa diubah oleh Developer.';
+
+function roleDeveloper_(roleRaw) {
+  const r = String(roleRaw || '').trim().toLowerCase();
+  return r === 'developer' || r === 'dev' || r === 'dewa';
+}
+
+function requesterDeveloper_(requesterUsername) {
+  return isUsernameRoleDeveloper_(String(requesterUsername || '').trim().toLowerCase());
+}
+
 function tambahUserMaster(requesterUsername, usernameBaru, roleBaru, facilityId) {
   if (!isNikPunyaAksesSetting_(requesterUsername)) {
     return {
@@ -6308,6 +6740,7 @@ function tambahUserMaster(requesterUsername, usernameBaru, roleBaru, facilityId)
   const uname = String(usernameBaru || '').trim();
   const role = String(roleBaru || '').trim().toLowerCase();
   let facId = String(facilityId || '').trim();
+  let facNama = '';
   if (!uname) return {
     success: false,
     message: 'NIK/Username tidak boleh kosong.'
@@ -6318,10 +6751,19 @@ function tambahUserMaster(requesterUsername, usernameBaru, roleBaru, facilityId)
       message: 'Role tidak valid. Pilih salah satu: ' + MASTER_ROLE_VALID_.join(', ') + '.'
     };
   }
+  if (role === 'developer' && !requesterDeveloper_(requesterUsername)) {
+    return {
+      success: false,
+      message: PESAN_KHUSUS_DEVELOPER_
+    };
+  }
   if (!facId && role !== 'developer') {
     if (typeof getUserFacility === 'function') {
       const requesterFac = getUserFacility(requesterUsername);
-      if (requesterFac) facId = requesterFac.id;
+      if (requesterFac) {
+        facId = requesterFac.id;
+        facNama = requesterFac.nama || requesterFac.name || '';
+      }
     }
   }
   let sheet = null;
@@ -6366,7 +6808,7 @@ function tambahUserMaster(requesterUsername, usernameBaru, roleBaru, facilityId)
   catatLogPerubahanConfig_(requesterUsername, 'Manajemen User', 'Tambah user "' + uname + '" role ' + role + (facId ? ' ke facility ' + facId : '') + '.');
   return {
     success: true,
-    message: 'User "' + uname + '" berhasil ditambahkan' + (facId ? ' (Auto-assign ke ' + facId + ').' : '.')
+    message: 'User "' + uname + '" berhasil ditambahkan' + (facId ? ' ke facility ' + (facNama || facId) + '.' : '.')
   };
 }
 
@@ -6378,6 +6820,7 @@ function updateRoleUserMaster(requesterUsername, rowIndex, usernameKonfirmasi, r
     };
   }
   const role = String(roleBaru || '').trim().toLowerCase();
+  const facDikirim = facilityId !== undefined && facilityId !== null;
   const facId = String(facilityId || '').trim();
   if (MASTER_ROLE_VALID_.indexOf(role) === -1) {
     return {
@@ -6406,8 +6849,14 @@ function updateRoleUserMaster(requesterUsername, rowIndex, usernameKonfirmasi, r
     };
   }
   const roleLama = String(sheet.getRange(rowIndex, roleColIdx).getValue() || '').trim();
+  if ((role === 'developer' || roleDeveloper_(roleLama)) && roleDeveloper_(roleLama) !== (role === 'developer') && !requesterDeveloper_(requesterUsername)) {
+    return {
+      success: false,
+      message: PESAN_KHUSUS_DEVELOPER_
+    };
+  }
   sheet.getRange(rowIndex, roleColIdx).setValue(role);
-  if (isNewFormat && facId !== undefined) {
+  if (isNewFormat && facDikirim) {
     sheet.getRange(rowIndex, 4).setValue(facId);
     if (facId && typeof assignUserKeFacility === 'function') {
       assignUserKeFacility(requesterUsername, actualUsername, facId);
@@ -6449,6 +6898,21 @@ function setStatusUserMaster(requesterUsername, rowIndex, usernameKonfirmasi, st
       success: false,
       message: 'Data user sudah berubah.'
     };
+  }
+  if (status === 'Nonaktif') {
+    if (actualUsername.toLowerCase() === String(requesterUsername || '').trim().toLowerCase()) {
+      return {
+        success: false,
+        message: 'Akun sendiri tidak bisa dinonaktifkan. Minta pemegang akses Config lain.'
+      };
+    }
+    const roleTarget = String(sheet.getRange(rowIndex, isNewFormat ? 2 : 4).getValue() || '');
+    if (roleDeveloper_(roleTarget) && !requesterDeveloper_(requesterUsername)) {
+      return {
+        success: false,
+        message: PESAN_KHUSUS_DEVELOPER_
+      };
+    }
   }
   sheet.getRange(rowIndex, statusColIdx).setValue(status);
   clearMasterCache_();
@@ -6606,6 +7070,23 @@ function getLevelGroup_(level) {
   return LEVEL_GROUPS[LEVEL_GROUPS.length - 1];
 }
 
+function waktuKlienSah_(ms) {
+  const t = Number(ms);
+  if (!t || isNaN(t)) return null;
+  const now = (new Date).getTime();
+  if (t > now + 2 * 6e4 || t < now - 12 * 36e5) return null;
+  return new Date(t);
+}
+
+function waktuBarisAntrean_(waktuHitung, timestampAntrean) {
+  const isDate = function(v) {
+    return Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime());
+  };
+  if (isDate(waktuHitung)) return waktuHitung;
+  if (isDate(timestampAntrean)) return timestampAntrean;
+  return new Date;
+}
+
 function rowDateTag_(row) {
   const waktuCycle = row[15];
   if (Object.prototype.toString.call(waktuCycle) === '[object Date]') {
@@ -6748,7 +7229,7 @@ function getPendingValidasiCount(requesterUsername) {
   return getPendingValidasiCountData_(info, requesterUsername);
 }
 
-function submitValidasi(id, namaValidator, qtyValidasi) {
+function submitValidasi(id, namaValidator, qtyValidasi, waktuKlien, facKlien) {
   requireRole_(namaValidator, [ 'inventory', 'admin', 'developer' ]);
   const aktual = Number(qtyValidasi);
   if (qtyValidasi === '' || qtyValidasi === null || qtyValidasi === undefined || isNaN(aktual) || aktual < 0) {
@@ -6761,11 +7242,18 @@ function submitValidasi(id, namaValidator, qtyValidasi) {
   if (!facInfo) {
     return {
       success: false,
-      message: 'Akun Anda belum di-assign ke facility manapun (atau facility-nya nonaktif). Hubungi admin untuk set assignment facility. Kalau Anda Developer, pilih facility aktif dulu lewat Facility Switcher.'
+      message: PESAN_TANPA_FACILITY_
+    };
+  }
+  if (!facilityKlienCocok_(facKlien, facInfo)) {
+    return {
+      success: false,
+      kode: 'FACILITY_BERUBAH',
+      message: PESAN_FACILITY_BERUBAH_
     };
   }
   try {
-    queueValidasiPayload_(id, namaValidator, aktual, facInfo.id);
+    queueValidasiPayload_(id, namaValidator, aktual, facInfo.id, waktuKlienSah_(waktuKlien));
   } catch (e) {
     return {
       success: false,
@@ -6779,9 +7267,9 @@ function submitValidasi(id, namaValidator, qtyValidasi) {
   };
 }
 
-function queueValidasiPayload_(id, namaValidator, qtyValidasi, facilityId) {
+function queueValidasiPayload_(id, namaValidator, qtyValidasi, facilityId, waktuHitung) {
   const sheet = getValidasiQueueSheet_();
-  appendRowLocked_(sheet, [ new Date, id, namaValidator, qtyValidasi, facilityId ]);
+  appendRowLocked_(sheet, [ new Date, id, namaValidator, qtyValidasi, facilityId, waktuHitung || '' ]);
 }
 
 function processValidasiQueue_() {
@@ -6830,7 +7318,7 @@ function processValidasiQueue_() {
         const namaValidator = String(row[2] || '').trim();
         const qtyValidasi = row[3];
         try {
-          const result = processSingleQueuedValidasi_(id, namaValidator, qtyValidasi, facilityId);
+          const result = processSingleQueuedValidasi_(id, namaValidator, qtyValidasi, facilityId, waktuBarisAntrean_(row[5], row[0]));
           if (!result.success) {
             catatLogSistem_('Worker Validasi', 'Skip Id=' + id + ' (' + namaValidator + '): ' + result.message);
           }
@@ -6849,7 +7337,7 @@ function processValidasiQueue_() {
   deleteProcessedQueueRows_(qSheet, processedRowNumbers);
 }
 
-function processSingleQueuedValidasi_(id, namaValidator, qtyValidasi, facilityId) {
+function processSingleQueuedValidasi_(id, namaValidator, qtyValidasi, facilityId, waktuHitung) {
   const aktual = Number(qtyValidasi);
   const sheet = getRiwayatSheet_(namaValidator);
   const rowIndex = findRiwayatRow_(sheet, id);
@@ -6868,7 +7356,7 @@ function processSingleQueuedValidasi_(id, namaValidator, qtyValidasi, facilityId
   }
   const qtySystem = Number(rowValues[6]);
   const hasilFinal = aktual === qtySystem ? 'HIT' : 'DISCREPANCY';
-  const waktu = new Date;
+  const waktu = waktuHitung || new Date;
   const newRow = rowValues.slice();
   sheet.getRange(rowIndex, 12, 1, 4).setValues([ [ 'Selesai', namaValidator, aktual, hasilFinal ] ]);
   sheet.getRange(rowIndex, 14).setNumberFormat('0');

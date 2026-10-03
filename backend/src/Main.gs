@@ -10,8 +10,8 @@ function doGet(e) {
   return HtmlService.createHtmlOutput(
     '<div style="font-family:sans-serif;padding:24px;line-height:1.5">' +
     '<h3>Cycle Transaksi \u2014 server aktif (' + APP_VERSION + ')</h3>' +
-    '<p>Buka lewat aplikasi Android Cycle Transaksi. Salin alamat halaman ini (yang berakhiran <b>/exec</b>) ' +
-    'ke menu <b>Atur server</b> di layar masuk aplikasi.</p></div>')
+    '<p>Halaman ini adalah server aplikasi Android Cycle Transaksi. Alamat halaman ini (yang berakhiran <b>/exec</b>) ' +
+    'ditanam di aplikasi oleh pengembang; pengguna cukup masuk dengan NIK.</p></div>')
     .setTitle('Cycle Transaksi')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
 }
@@ -85,15 +85,28 @@ function debugCekAksesConfig() {
 }
 
 function clearMasterCache_() {
-  _memUserRoleCache_ = {};
-  CacheService.getScriptCache().removeAll([
+  resetMemEksekusi_();
+  const kunci = [
     'activeLocations',
     'masterUsernames',
     'assignableUsers',
     'levelSettings',
     'kategoriMapping',
     'inventoryUsers'
-  ]);
+  ];
+  // Daftar petugas & validator di-cache 5 menit PER FACILITY. Tanpa ikut dibuang di sini, user
+  // yang baru ditambah (atau perannya baru diganti) belum muncul di Upload Data sampai 5 menit.
+  try {
+    const fs = getFacilitySheet_();
+    const last = fs.getLastRow();
+    if (last >= 2) {
+      fs.getRange(2, 1, last - 1, 1).getValues().forEach(function (r) {
+        const id = String(r[0] || '').trim();
+        if (id) { kunci.push('assignableUsers_fac_' + id); kunci.push('inventoryUsers_fac_' + id); }
+      });
+    }
+  } catch (e) { /* sheet Facility belum ada: tidak ada cache per facility */ }
+  CacheService.getScriptCache().removeAll(kunci);
   // v8.26.0: Bersihkan juga cache facility management
   clearFacilityCache_();
 }
@@ -287,6 +300,7 @@ const API_ACTIONS = {
 
 function doPost(e) {
   try {
+    resetMemEksekusi_();
     const req = JSON.parse(e.postData.contents || '{}');
     // Aplikasi Android mengirim { action, args: [...] } -- lihat ApiBridge.gs
     const viaApk = apiBridge_(req);

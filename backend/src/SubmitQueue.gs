@@ -33,9 +33,9 @@
  * Menitipkan 1 payload submit ke antrian. HANYA 1x appendRow ke spreadsheet BOUND -- tidak
  * membuka spreadsheet facility sama sekali.
  */
-function queueSubmitPayload_(no, namaPetugas, qtyCount, facilityId) {
+function queueSubmitPayload_(no, namaPetugas, qtyCount, facilityId, waktuHitung) {
   const sheet = getSubmitQueueSheet_();
-  appendRowLocked_(sheet, [new Date(), no, namaPetugas, qtyCount, facilityId]);
+  appendRowLocked_(sheet, [new Date(), no, namaPetugas, qtyCount, facilityId, waktuHitung || '']);
 }
 
 
@@ -110,7 +110,7 @@ function processSubmitQueue_() {
         const qtyCount = row[3];
 
         try {
-          const result = processSingleQueuedSubmit_(no, namaPetugas, qtyCount, facilityId);
+          const result = processSingleQueuedSubmit_(no, namaPetugas, qtyCount, facilityId, waktuBarisAntrean_(row[5], row[0]));
           if (!result.success) {
             catatLogSistem_('Worker Submit', 'Skip No ' + no + ' (' + namaPetugas + '): ' + result.message);
           }
@@ -139,7 +139,7 @@ function processSubmitQueue_() {
  * Dipanggil dari dalam processSubmitQueue_() yang SUDAH memegang facLock facility terkait --
  * TIDAK perlu lock lagi di sini.
  */
-function processSingleQueuedSubmit_(no, namaPetugas, qtyCount, facilityId) {
+function processSingleQueuedSubmit_(no, namaPetugas, qtyCount, facilityId, waktuHitung) {
   const aktual = Number(qtyCount);
   const sheet = getSheet_(namaPetugas);
   const itemData = findDataCountRowAndValues_(sheet, no);
@@ -161,7 +161,8 @@ function processSingleQueuedSubmit_(no, namaPetugas, qtyCount, facilityId) {
   const addWhoTransaksi = rowValues[15];
   const selisih = aktual - qtySystem;
   const hasilAwal = selisih === 0 ? 'HIT' : 'DISCREPANCY';
-  const waktu = new Date();
+  // Jam hitung = jam petugas menyimpan di HP (atau jam diterima server), bukan jam worker berjalan.
+  const waktu = waktuHitung || new Date();
 
   // Tulis ke Data Count (1 API call)
   sheet.getRange(rowIndex, 10, 1, 6).setValues([[namaPetugas, 'Selesai', aktual, selisih, hasilAwal, waktu]]);

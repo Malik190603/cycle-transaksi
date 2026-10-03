@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="color-scheme" content="light dark">
+  <title>Cycle Transaksi</title>
+  <script>
+    // Tema dipasang sebelum halaman digambar supaya tidak berkedip terang di mode gelap.
+    try {
+      var t = JSON.parse(localStorage.getItem('ct.tema'));
+      if (t === 'gelap' || (t == null && window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches)) document.documentElement.setAttribute('data-tema', 'gelap');
+    } catch (e) {}
+  </script>
+  <link rel="stylesheet" href="app.css">
+</head>
+<body>
+  <main id="app">
+    <section class="scr" id="scr-login" aria-label="Masuk"></section>
+    <section class="scr" id="scr-home" aria-label="Home"></section>
+    <section class="scr" id="scr-cycle" aria-label="Cycle"></section>
+    <section class="scr" id="scr-validasi" aria-label="Validasi"></section>
+    <section class="scr" id="scr-hitung" aria-label="Hitung"></section>
+    <section class="scr" id="scr-verifikasi" aria-label="Verifikasi"></section>
+    <section class="scr" id="scr-upload" aria-label="Upload Data"></section>
+    <section class="scr" id="scr-report" aria-label="Report"></section>
+    <section class="scr" id="scr-config" aria-label="Config"></section>
+  </main>
+  <nav class="nav" id="nav" aria-label="Menu utama" hidden></nav>
+  <script src="config.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

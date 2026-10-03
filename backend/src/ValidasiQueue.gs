@@ -19,9 +19,9 @@
 // SISI PENULIS (dipanggil dari submitValidasi())
 // =========================================================================
 
-function queueValidasiPayload_(id, namaValidator, qtyValidasi, facilityId) {
+function queueValidasiPayload_(id, namaValidator, qtyValidasi, facilityId, waktuHitung) {
   const sheet = getValidasiQueueSheet_();
-  appendRowLocked_(sheet, [new Date(), id, namaValidator, qtyValidasi, facilityId]);
+  appendRowLocked_(sheet, [new Date(), id, namaValidator, qtyValidasi, facilityId, waktuHitung || '']);
 }
 
 
@@ -84,7 +84,7 @@ function processValidasiQueue_() {
         const qtyValidasi = row[3];
 
         try {
-          const result = processSingleQueuedValidasi_(id, namaValidator, qtyValidasi, facilityId);
+          const result = processSingleQueuedValidasi_(id, namaValidator, qtyValidasi, facilityId, waktuBarisAntrean_(row[5], row[0]));
           if (!result.success) {
             catatLogSistem_('Worker Validasi', 'Skip Id=' + id + ' (' + namaValidator + '): ' + result.message);
           }
@@ -108,7 +108,7 @@ function processValidasiQueue_() {
  * Validasi.gs. Dipanggil dari dalam processValidasiQueue_() yang SUDAH memegang facLock
  * facility terkait -- TIDAK perlu lock lagi di sini.
  */
-function processSingleQueuedValidasi_(id, namaValidator, qtyValidasi, facilityId) {
+function processSingleQueuedValidasi_(id, namaValidator, qtyValidasi, facilityId, waktuHitung) {
   const aktual = Number(qtyValidasi);
   const sheet = getRiwayatSheet_(namaValidator);
   const rowIndex = findRiwayatRow_(sheet, id);
@@ -123,7 +123,7 @@ function processSingleQueuedValidasi_(id, namaValidator, qtyValidasi, facilityId
 
   const qtySystem = Number(rowValues[6]);
   const hasilFinal = aktual === qtySystem ? 'HIT' : 'DISCREPANCY';
-  const waktu = new Date();
+  const waktu = waktuHitung || new Date();
   const newRow = rowValues.slice();
   sheet.getRange(rowIndex, 12, 1, 4).setValues([['Selesai', namaValidator, aktual, hasilFinal]]);
   sheet.getRange(rowIndex, 14).setNumberFormat('0');

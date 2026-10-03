@@ -341,7 +341,7 @@ function getErrorAnalysis(periodType, periodValue, requesterUsername) {
  * Qty_System, Qty_Count, dan Nama_Petugas (user yang melakukan cycle count-nya).
  */
 function getErrorAnalysisDetail(alasan, periodType, periodValue, requesterUsername) {
-  requireRole_(requesterUsername, ['admin']);
+  requireRole_(requesterUsername, ['admin', 'developer']);
 
   // v8.26.0: Teruskan requesterUsername agar baca dari facility user
   const sheet = getRiwayatSheet_(requesterUsername);
@@ -452,7 +452,7 @@ function getDashboardData(periodType, periodValue, trendCount, requesterUsername
  * memang dibutuhkan (bukan tiap buka Dashboard).
  */
 function getProblemItemsDetail(periodType, periodValue, requesterUsername) {
-  requireRole_(requesterUsername, ['admin']);
+  requireRole_(requesterUsername, ['admin', 'developer']);
 
   // v8.26.0: Teruskan requesterUsername agar baca dari facility user
   const sheet = getRiwayatSheet_(requesterUsername);

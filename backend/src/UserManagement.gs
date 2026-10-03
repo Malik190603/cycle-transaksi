@@ -4,7 +4,7 @@
  * diarahkan ke sheet Master_User.
  */
 
-const MASTER_ROLE_VALID_ = ['admin', 'inventory', 'outbound', 'storing', 'inbound', 'developer'];
+const MASTER_ROLE_VALID_ = ['admin', 'inventory', 'outbound', 'storing', 'inbound', 'lp', 'maintenance', 'developer'];
 
 /**
  * Daftar lengkap user Master dari Master_User (termasuk yg Nonaktif).
@@ -69,6 +69,15 @@ function getDaftarUserMaster(requesterUsername) {
   return { success: true, users: users, roleValid: MASTER_ROLE_VALID_ };
 }
 
+const PESAN_KHUSUS_DEVELOPER_ = 'Akun dan peran Developer hanya bisa diubah oleh Developer.';
+function roleDeveloper_(roleRaw) {
+  const r = String(roleRaw || '').trim().toLowerCase();
+  return r === 'developer' || r === 'dev' || r === 'dewa';
+}
+function requesterDeveloper_(requesterUsername) {
+  return isUsernameRoleDeveloper_(String(requesterUsername || '').trim().toLowerCase());
+}
+
 /**
  * Tambah user baru (dan facility-nya) ke Master_User.
  */
@@ -80,6 +89,7 @@ function tambahUserMaster(requesterUsername, usernameBaru, roleBaru, facilityId)
   const uname = String(usernameBaru || '').trim();
   const role = String(roleBaru || '').trim().toLowerCase();
   let facId = String(facilityId || '').trim();
+  let facNama = ''; // nama facility untuk pesan hasil (bukan kode internal FAC-...)
 
   if (!uname) return { success: false, message: 'NIK/Username tidak boleh kosong.' };
   if (MASTER_ROLE_VALID_.indexOf(role) === -1) {
@@ -88,12 +98,15 @@ function tambahUserMaster(requesterUsername, usernameBaru, roleBaru, facilityId)
       message: 'Role tidak valid. Pilih salah satu: ' + MASTER_ROLE_VALID_.join(', ') + '.'
     };
   }
+  if (role === 'developer' && !requesterDeveloper_(requesterUsername)) {
+    return { success: false, message: PESAN_KHUSUS_DEVELOPER_ };
+  }
 
   // Improvement: Auto-assign user baru ke facility yang sedang aktif dipakai oleh admin/requester
   if (!facId && role !== 'developer') {
     if (typeof getUserFacility === 'function') {
       const requesterFac = getUserFacility(requesterUsername);
-      if (requesterFac) facId = requesterFac.id;
+      if (requesterFac) { facId = requesterFac.id; facNama = requesterFac.nama || requesterFac.name || ''; }
     }
   }
 
@@ -137,7 +150,7 @@ function tambahUserMaster(requesterUsername, usernameBaru, roleBaru, facilityId)
   clearMasterCache_();
   catatLogPerubahanConfig_(requesterUsername, 'Manajemen User', 'Tambah user "' + uname + '" role ' + role + (facId ? ' ke facility ' + facId : '') + '.');
 
-  return { success: true, message: 'User "' + uname + '" berhasil ditambahkan' + (facId ? ' (Auto-assign ke ' + facId + ').' : '.') };
+  return { success: true, message: 'User "' + uname + '" berhasil ditambahkan' + (facId ? ' ke facility ' + (facNama || facId) + '.' : '.') };
 }
 
 function updateRoleUserMaster(requesterUsername, rowIndex, usernameKonfirmasi, roleBaru, facilityId) {
@@ -146,6 +159,9 @@ function updateRoleUserMaster(requesterUsername, rowIndex, usernameKonfirmasi, r
   }
 
   const role = String(roleBaru || '').trim().toLowerCase();
+  // facilityId hanya diubah bila memang dikirim. Tanpa pengecekan ini, mengganti peran saja
+  // (tanpa argumen facility) mengosongkan kolom ID_Facility dan user itu hilang dari daftar petugas.
+  const facDikirim = facilityId !== undefined && facilityId !== null;
   const facId = String(facilityId || '').trim();
 
   if (MASTER_ROLE_VALID_.indexOf(role) === -1) {
@@ -170,9 +186,14 @@ function updateRoleUserMaster(requesterUsername, rowIndex, usernameKonfirmasi, r
   }
 
   const roleLama = String(sheet.getRange(rowIndex, roleColIdx).getValue() || '').trim();
+  // Developer adalah super user lintas facility: peran itu hanya boleh diberikan, atau dicabut,
+  // oleh Developer lain. Tanpa ini pemegang akses Config mana pun bisa mengangkat dirinya sendiri.
+  if ((role === 'developer' || roleDeveloper_(roleLama)) && roleDeveloper_(roleLama) !== (role === 'developer') && !requesterDeveloper_(requesterUsername)) {
+    return { success: false, message: PESAN_KHUSUS_DEVELOPER_ };
+  }
   sheet.getRange(rowIndex, roleColIdx).setValue(role);
 
-  if (isNewFormat && facId !== undefined) {
+  if (isNewFormat && facDikirim) {
     sheet.getRange(rowIndex, 4).setValue(facId);
     // Sync juga ke User_Facility_Assignment
     if (facId && typeof assignUserKeFacility === 'function') {
@@ -209,6 +230,16 @@ function setStatusUserMaster(requesterUsername, rowIndex, usernameKonfirmasi, st
 
   if (!actualUsername || actualUsername.toLowerCase() !== String(usernameKonfirmasi || '').trim().toLowerCase()) {
     return { success: false, message: 'Data user sudah berubah.' };
+  }
+  if (status === 'Nonaktif') {
+    // Menonaktifkan akun sendiri = terkunci di luar (tidak bisa masuk lagi untuk mengaktifkannya).
+    if (actualUsername.toLowerCase() === String(requesterUsername || '').trim().toLowerCase()) {
+      return { success: false, message: 'Akun sendiri tidak bisa dinonaktifkan. Minta pemegang akses Config lain.' };
+    }
+    const roleTarget = String(sheet.getRange(rowIndex, isNewFormat ? 2 : 4).getValue() || '');
+    if (roleDeveloper_(roleTarget) && !requesterDeveloper_(requesterUsername)) {
+      return { success: false, message: PESAN_KHUSUS_DEVELOPER_ };
+    }
   }
 
   sheet.getRange(rowIndex, statusColIdx).setValue(status);

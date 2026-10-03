@@ -1,17 +1,19 @@
 {
   "name": "cycle-transaksi",
-  "version": "1.0.0",
+  "version": "2.0.0",
   "private": true,
-  "description": "Cycle Transaksi - aplikasi Android (Capacitor) dengan backend Google Apps Script dan database Google Sheets",
+  "description": "Cycle Transaksi - aplikasi Android (Capacitor) untuk cycle count gudang, dengan backend Google Apps Script dan database Google Sheets",
   "updateRepo": "Malik190603/cycle-transaksi",
   "scripts": {
     "build": "node scripts/build-web.mjs",
+    "demo": "node scripts/build-web.mjs --demo-saja",
     "sync": "cap sync android",
     "check": "node scripts/check.mjs",
     "version": "node scripts/version.mjs",
     "notes": "node scripts/release-notes.mjs",
-    "test": "node test/run.mjs && node test/backend.mjs && node test/backend.mjs --single",
-    "backend": "node scripts/build-backend.mjs"
+    "backend": "node scripts/build-backend.mjs",
+    "test": "node test/backend.mjs && node test/backend.mjs --single && node test/ui.mjs",
+    "test:backend": "node test/backend.mjs && node test/backend.mjs --single"
   },
   "dependencies": {
     "@capacitor-community/file-opener": "8.0.1",
@@ -24,6 +26,8 @@
     "@capgo/capacitor-updater": "8.52.1"
   },
   "devDependencies": {
+    "@fontsource/barlow": "^5.2.8",
+    "@fontsource/barlow-condensed": "^5.2.8",
     "terser": "^5.51.2",
     "xlsx": "0.18.5"
   }

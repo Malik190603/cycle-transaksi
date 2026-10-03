@@ -96,12 +96,14 @@ function getUserFacilityAssignmentSheet_() {
 }
 
 function clearFacilityCache_() {
+  _memUserFacility_ = {};
   try {
     CacheService.getScriptCache().remove(CACHE_FACILITY_LIST);
   } catch (e) { /* abaikan */ }
 }
 
 function clearUserFacilityCache_(username) {
+  delete _memUserFacility_[String(username || '').trim().toLowerCase()];
   try {
     CacheService.getScriptCache().remove(CACHE_USER_FACILITY_PREFIX + String(username || '').toLowerCase());
   } catch (e) { /* abaikan */ }
@@ -558,7 +560,13 @@ function getFacilityInfoById_(facilityId) {
 function getUserFacility(username) {
   const uname = String(username || '').trim().toLowerCase();
   if (!uname) return null;
+  if (Object.prototype.hasOwnProperty.call(_memUserFacility_, uname)) return _memUserFacility_[uname];
+  const info = getUserFacilityTanpaMemo_(uname);
+  _memUserFacility_[uname] = info;
+  return info;
+}
 
+function getUserFacilityTanpaMemo_(uname) {
   if (isUsernameRoleDeveloper_(uname)) {
     const overrideId = CacheService.getScriptCache().get(CACHE_DEV_ACTIVE_FACILITY_PREFIX + uname);
     if (overrideId) {
@@ -631,6 +639,9 @@ function setDeveloperActiveFacility(username, facilityId) {
   const cacheKey = CACHE_DEV_ACTIVE_FACILITY_PREFIX + uname;
   const id = String(facilityId || '').trim();
 
+  // Info login (getUserRole) memuat facility dan di-cache 5 menit: buang supaya aplikasi langsung
+  // menerima facility yang baru dipilih.
+  clearUserRoleCache_(uname);
   if (!id) {
     CacheService.getScriptCache().remove(cacheKey);
     return { success: true, message: 'Kembali ke facility assignment normal.', facility: getUserFacility(uname) };
@@ -736,6 +747,9 @@ function assignUserKeFacility(username, targetUsername, facilityId) {
   }
   
   clearUserFacilityCache_(targetUname);
+  // getUserRole() ikut menyimpan facility user selama 5 menit: tanpa ini aplikasi baru tahu
+  // user dipindah setelah cache habis, padahal hasil kirimannya sudah ditolak (facility lama).
+  clearUserRoleCache_(targetUname);
   catatLogPerubahanConfig_(username, 'Facility Management',
     'User "' + targetUname + '" di-assign ke facility "' + namaFacility + '".');
   
@@ -835,6 +849,20 @@ function getOperasionalSpreadsheet_(username) {
  *   url:string}|null} - Info facility kalau valid & aktif, ATAU null kalau tidak. Caller
  *   HARUS langsung return pesan error ke user kalau hasilnya null, jangan lanjut proses.
  */
+const PESAN_TANPA_FACILITY_ = 'Akun Anda belum punya facility aktif. Minta admin mengaturnya di Config.';
+
+/**
+ * Hasil hitung/validasi yang dikirim aplikasi membawa facility tempat hasil itu dibuat. Hasil bisa
+ * tertahan di HP (tanpa sinyal) dan baru terkirim setelah akunnya dipindah ke facility lain; nomor
+ * tugas hanya unik di dalam satu facility, jadi hasil seperti itu bisa mendarat di item yang salah.
+ * Aplikasi versi lama tidak mengirim nilai ini (dianggap cocok).
+ */
+const PESAN_FACILITY_BERUBAH_ = 'Facility akun ini berubah sebelum hasil terkirim. Hitung ulang dari daftar tugas yang baru.';
+function facilityKlienCocok_(facKlien, facInfo) {
+  const f = String(facKlien === null || facKlien === undefined ? '' : facKlien).trim();
+  return !f || f === '-' || f === String(facInfo.id);
+}
+
 function requireUserFacility_(username) {
   const facInfo = getUserFacility(username);
   if (!facInfo || facInfo.status === 'Nonaktif') return null;
@@ -1042,6 +1070,8 @@ function importLokasiAktif(username, facilityId, daftarLokasi, gantiSemua) {
     lokasiSheet.getRange(startRow, 1, lokasiBaru.length, 1).setValues(lokasiBaru);
     lokasiBersih.length = lokasiBaru.length;
   }
+  // Daftar lokasi aktif di-cache 5 menit; tanpa dibuang, Upload Data masih memakai daftar lama.
+  clearActiveLocationsCache_(facId);
   
   catatLogPerubahanConfig_(username, 'Facility Management',
     'Import lokasi aktif ke facility "' + namaFacility + '": ' +

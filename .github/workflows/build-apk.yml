@@ -5,7 +5,7 @@ on:
   push:
     branches: [main]
     # Perubahan backend Apps Script, uji, atau dokumen saja tidak perlu rilis APK baru
-    paths-ignore: ['backend/**', 'test/**', 'README.md', 'scripts/build-backend.mjs']
+    paths-ignore: ['backend/**', 'test/**', 'docs/**', 'README.md', 'scripts/build-backend.mjs']
   workflow_dispatch:
 
 permissions:
@@ -54,15 +54,19 @@ jobs:
       - name: Pasang dependensi
         run: npm ci
 
+      - name: Uji backend (dipakai juga oleh mode demo di dalam aplikasi)
+        run: node test/backend.mjs
+
       - name: Susun aplikasi web (www/) dari src/
-        # GAS_URL (opsional): Settings › Secrets and variables › Actions › Variables. Kosong = diisi di layar masuk.
+        # Alamat Web App: app/server.json (atau variabel GAS_URL di Settings › Secrets and variables › Actions).
+        # Aplikasi tidak punya layar pengaturan server; HP yang sudah terpasang mengambil app/server.json dari repo.
         env:
           VERSION_CODE: ${{ github.run_number }}
           GAS_URL: ${{ vars.GAS_URL }}
         run: node scripts/build-web.mjs
 
       - name: Pemeriksaan kode sebelum rilis
-        # Sintaks skrip, jembatan, konfigurasi, dan kunci rahasia. Gagal = tidak ada rilis.
+        # Berkas & sintaks, tanpa CDN, aksi/ikon/fungsi server lengkap, konfigurasi, kunci rahasia. Gagal = tidak ada rilis.
         run: npm run check
 
       - name: Salin aplikasi web ke proyek Android

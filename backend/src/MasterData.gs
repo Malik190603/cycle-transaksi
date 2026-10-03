@@ -41,8 +41,10 @@ function isBarisUserAktif_(statusRaw) {
  */
 function getActiveLocations_(username) {
   const cache = CacheService.getScriptCache();
-  // Cache key per-user supaya setiap facility punya cache sendiri
-  const cacheKey = username ? ('activeLocations_' + String(username).toLowerCase()) : 'activeLocations';
+  // Cache per FACILITY (bukan per user): satu kunci yang bisa dibuang begitu daftar lokasi diimpor,
+  // jadi semua admin facility itu langsung melihat daftar baru (lihat clearActiveLocationsCache_).
+  const facCache = username ? getUserFacility(username) : null;
+  const cacheKey = facCache ? ('activeLocations_fac_' + facCache.id) : (username ? ('activeLocations_' + String(username).toLowerCase()) : 'activeLocations');
   const cached = cache.get(cacheKey);
   if (cached) return JSON.parse(cached);
 
@@ -87,12 +89,34 @@ function getActiveLocations_(username) {
   return set;
 }
 
+function clearActiveLocationsCache_(facilityId) {
+  try { CacheService.getScriptCache().removeAll(['activeLocations', 'activeLocations_fac_' + facilityId]); } catch (e) { /* abaikan */ }
+}
+
 var _memUserRoleCache_ = {};
+// Memo dalam SATU eksekusi (variabel global Apps Script tidak bertahan antar permintaan):
+// getUserFacility() dipanggil oleh setiap pengambil sheet per-user, dan tanpa memo ini tiap
+// panggilan membaca ulang sheet Master lewat isUsernameRoleDeveloper_ (11x untuk satu Home admin).
+var _memIsDeveloper_ = {};
+var _memUserFacility_ = {};
+
+/**
+ * Mengosongkan memo per-eksekusi. Di Apps Script asli ini tidak mengubah apa-apa (tiap permintaan
+ * mulai dari keadaan kosong); dipanggil di awal doPost/doGet/workerSemua supaya uji di Node dan
+ * mode demo aplikasi, yang memakai ulang konteks yang sama, berperilaku seperti server sungguhan.
+ */
+function resetMemEksekusi_() {
+  _memUserRoleCache_ = {};
+  _memIsDeveloper_ = {};
+  _memUserFacility_ = {};
+}
 
 function clearUserRoleCache_(username) {
   try {
     const uname = String(username || '').trim().toLowerCase();
     delete _memUserRoleCache_[uname];
+    delete _memIsDeveloper_[uname];
+    delete _memUserFacility_[uname];
     CacheService.getScriptCache().remove('userRole_' + uname);
   } catch (e) { /* abaikan */ }
 }
@@ -150,9 +174,12 @@ function getUserRole(username) {
               facInfo = getFacilityInfoById_(facId);
             }
 
-            // Fallback facility (jika kosong, mungkin user dari migrasi belum diassign)
-            if (!facInfo && typeof getUserFacility === 'function') {
-              // Perlu hati-hati infinite loop, jangan pakai getUserFacility langsung jika memanggil ini
+            // Developer: facility yang sedang dipilih lewat pemilih facility (setDeveloperActiveFacility)
+            // menggantikan assignment di sheet, supaya aplikasi menampilkan facility yang datanya
+            // benar-benar sedang dibaca. getUserFacility() tidak memanggil getUserRole(), jadi tidak berputar.
+            if (role === 'developer' && typeof getUserFacility === 'function') {
+              const facDev = getUserFacility(u);
+              if (facDev) facInfo = facDev;
             }
 
             const result = {

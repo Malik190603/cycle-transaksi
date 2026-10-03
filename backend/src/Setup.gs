@@ -162,7 +162,7 @@ function setupAwal() {
 
   try { clearMasterCache_(); } catch (e) { /* abaikan */ }
   hasil.push('Lokasi_Aktif masih kosong: isi kolom A sheet "Lokasi_Aktif" (satu lokasi per baris) atau impor lewat menu Config di aplikasi.');
-  hasil.push('Langkah berikutnya: Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone), lalu salin URL /exec ke aplikasi.');
+  hasil.push('Langkah berikutnya: Deploy > New deployment > Web app (Execute as: Me, Who has access: Anyone), lalu kirim URL /exec ke pengembang aplikasi untuk ditanam.');
 
   const pesan = hasil.join('\n');
   Logger.log(pesan);
@@ -177,6 +177,7 @@ function setupAwal() {
 // (hitung -> validasi -> task -> ringkasan), dan jatah waktu trigger harian akun Google gratis
 // (90 menit/hari) tidak habis oleh empat eksekusi kosong tiap menit.
 function workerSemua() {
+  resetMemEksekusi_();
   const langkah = [
     ['Submit', processSubmitQueue_],
     ['Validasi', processValidasiQueue_],

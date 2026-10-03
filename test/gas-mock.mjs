@@ -1,9 +1,12 @@
 // Tiruan layanan Google Apps Script (SpreadsheetApp, CacheService, LockService, dst) di memori,
-// cukup untuk menjalankan backend/src/*.gs di Node. Meniru perilaku Sheets yang penting:
-// string angka menjadi angka dan string tanggal yyyy-MM-dd menjadi Date, kecuali kolom berformat teks.
-import crypto from 'node:crypto';
+// cukup untuk menjalankan backend/src/*.gs di Node maupun di browser (mode demo aplikasi, lihat
+// scripts/build-demo.mjs). Meniru perilaku Sheets yang penting: string angka menjadi angka dan
+// string tanggal yyyy-MM-dd menjadi Date, kecuali kolom berformat teks.
+// Tanpa import: hanya memakai globalThis.crypto, yang ada di Node 20+ dan di browser.
 
 export function createGas(now = () => new Date()) {
+  const crypto = globalThis.crypto;
+  const acak = (n) => Array.from(crypto.getRandomValues(new Uint8Array(n)), (b) => b.toString(16).padStart(2, '0')).join('');
   const books = new Map();
   let seq = 0;
   const colIdx = (s) => s.split('').reduce((n, c) => n * 26 + c.charCodeAt(0) - 64, 0);
@@ -67,8 +70,9 @@ export function createGas(now = () => new Date()) {
     setFontWeight() { return this; } setBackground() { return this; } setFontColor() { return this; } setHorizontalAlignment() { return this; } setWrap() { return this; } setNote() { return this; }
   }
   class Book {
-    constructor(name) { this.id = 'SS' + (++seq) + crypto.randomBytes(6).toString('hex'); this.name = name; this.sheets = [new Sheet(this, 'Sheet1')]; books.set(this.id, this); }
+    constructor(name) { this.id = 'SS' + (++seq) + acak(6); this.name = name; this.sheets = [new Sheet(this, 'Sheet1')]; books.set(this.id, this); }
     getId() { return this.id; } getName() { return this.name; } getUrl() { return 'https://docs.google.com/spreadsheets/d/' + this.id + '/edit'; }
+    getSpreadsheetTimeZone() { return 'Asia/Jakarta'; } // tiruan ini mengubah teks tanggal menjadi tengah malam WIB (lihat Sheet.conv)
     getSheetByName(n) { return this.sheets.find((s) => s.name === n) || null; }
     insertSheet(n) { if (this.getSheetByName(n)) throw new Error('Sheet sudah ada: ' + n); const s = new Sheet(this, n); this.sheets.push(s); return s; }
     getSheets() { return this.sheets.slice(); }

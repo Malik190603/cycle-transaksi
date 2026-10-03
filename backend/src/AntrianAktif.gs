@@ -146,16 +146,25 @@ function adjustPlusMinusTracker_(selisih, article, description, lokasi, add, use
  * v8.26.0: Menerima parameter opsional `username` untuk summary per-facility.
  */
 function getPlusMinusSummaryFromAntrian_(username) {
+  const plusMap = readAntrianValue_(PLUSMINUS_KEY_PLUS_, {}, username);
+  const minusMap = readAntrianValue_(PLUSMINUS_KEY_MINUS_, {}, username);
+  return plusMinusDariMap_(plusMap, minusMap);
+}
+
+/**
+ * Bentuk tampil Summary plus minus dari dua peta pelacak (dipakai juga oleh getHomeBundle, yang
+ * membaca Antrian_Aktif sekali untuk semua kuncinya). Nilai teks dipaksa menjadi teks/angka biasa:
+ * isi sel yang diedit manual tidak boleh sampai ke aplikasi sebagai objek.
+ */
+function plusMinusDariMap_(plusMap, minusMap) {
   function toItems(map) {
-    const items = Object.keys(map).map(function (article) {
-      const e = map[article];
+    const items = Object.keys(map || {}).map(function (article) {
+      const e = map[article] || {};
       const lokasiOrder = Object.keys(e.lokasiCounts || {});
-      return { article: article, description: e.description, qty: e.qty, lokasi: lokasiOrder.join(', '), jumlahLokasi: lokasiOrder.length };
+      return { article: String(article), description: String(e.description == null ? '' : e.description), qty: Number(e.qty) || 0, lokasi: lokasiOrder.join(', '), jumlahLokasi: lokasiOrder.length };
     }).sort(function (a, b) { return b.qty - a.qty; });
     return { totalSku: items.length, totalQty: items.reduce(function (s, it) { return s + it.qty; }, 0), items: items };
   }
-  const plusMap = readAntrianValue_(PLUSMINUS_KEY_PLUS_, {}, username);
-  const minusMap = readAntrianValue_(PLUSMINUS_KEY_MINUS_, {}, username);
   return { plus: toItems(plusMap), minus: toItems(minusMap) };
 }
 

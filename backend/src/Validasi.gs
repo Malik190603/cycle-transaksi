@@ -65,7 +65,7 @@ function getPendingValidasiCount(requesterUsername) {
   return getPendingValidasiCountData_(info, requesterUsername);
 }
 
-function submitValidasi(id, namaValidator, qtyValidasi) {
+function submitValidasi(id, namaValidator, qtyValidasi, waktuKlien, facKlien) {
   requireRole_(namaValidator, ['inventory', 'admin', 'developer']);
   const aktual = Number(qtyValidasi);
   if (qtyValidasi === '' || qtyValidasi === null || qtyValidasi === undefined || isNaN(aktual) || aktual < 0) {
@@ -74,7 +74,10 @@ function submitValidasi(id, namaValidator, qtyValidasi) {
 
   const facInfo = requireUserFacility_(namaValidator);
   if (!facInfo) {
-    return { success: false, message: 'Akun Anda belum di-assign ke facility manapun (atau facility-nya nonaktif). Hubungi admin untuk set assignment facility. Kalau Anda Developer, pilih facility aktif dulu lewat Facility Switcher.' };
+    return { success: false, message: PESAN_TANPA_FACILITY_ };
+  }
+  if (!facilityKlienCocok_(facKlien, facInfo)) {
+    return { success: false, kode: 'FACILITY_BERUBAH', message: PESAN_FACILITY_BERUBAH_ };
   }
 
   // v8.31.0 (Asynchronous Queue Processing, sama pola dgn submitCount --
@@ -89,7 +92,7 @@ function submitValidasi(id, namaValidator, qtyValidasi) {
   // semua item yang
   // menumpuk, bukan 1x per item.
   try {
-    queueValidasiPayload_(id, namaValidator, aktual, facInfo.id);
+    queueValidasiPayload_(id, namaValidator, aktual, facInfo.id, waktuKlienSah_(waktuKlien));
   } catch (e) {
     return { success: false, message: 'Gagal masuk antrian validasi: ' + e.message };
   }

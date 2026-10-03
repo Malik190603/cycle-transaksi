@@ -315,7 +315,7 @@
  *    (Plus/Minus) menampilkan total SKU & Qty dari discrepancy yang masih aktif, bisa diklik
  *    untuk expand detail per SKU. getPrioritasHariIni() dihapus, diganti getPlusMinusSummary().
  */
-const APP_VERSION = 'v8.29.3';
+const APP_VERSION = 'v8.31.1-apk2';
 
 const MASTER_SHEET_NAME = 'Master';
 const SHEET_NAME = 'Data Count';
@@ -393,7 +393,8 @@ const CONFIG_AKSES_SETTING_HEADERS = ['NIK', 'Nama', 'Tanggal_Ditambahkan'];
 // Role yang setara dengan "Cycle" lama -- boleh mengerjakan Cycle Transaksi, TIDAK boleh
 // Validasi/Task Investigasi/Admin/Dashboard. Dipisah jadi 3 supaya bisa jadi acuan departemen
 // di mapping PIC kategori selisih (kolom K Master).
-const CYCLE_ROLES = ['outbound', 'storing', 'inbound'];
+// 'lp' & 'maintenance' ikut mengerjakan Cycle Transaksi seperti role operasional lain.
+const CYCLE_ROLES = ['outbound', 'storing', 'inbound', 'lp', 'maintenance'];
 // termasuk 'cycle' (nilai lama) supaya user yang di Master masih tertulis "Cycle" (belum
 // sempat diganti admin) tetap bisa akses menu Cycle Transaksi tanpa error.
 const CYCLE_ROLES_WITH_LEGACY = CYCLE_ROLES.concat(['cycle']);
@@ -542,14 +543,16 @@ const QUEUE_COUNTER_HEADERS = ['Timestamp', 'Key', 'Delta'];
 // buka spreadsheet facility -- tapi CUMA SEKALI per facility per siklus, dipakai utk proses
 // SEMUA item yang menumpuk sekaligus (bukan 1x buka per item seperti sebelumnya).
 const SUBMIT_QUEUE_SHEET_NAME = 'Queue_Submit_Cycle';
-const SUBMIT_QUEUE_HEADERS = ['Timestamp', 'No', 'NamaPetugas', 'QtyCount', 'FacilityId'];
+// Kolom ke-6 (aplikasi v2): jam petugas menekan Simpan di HP. Hasil bisa baru terkirim lama kemudian
+// (antrean di HP saat sinyal putus), jadi jam inilah yang dicatat sebagai Waktu_Cycle, bukan jam diproses.
+const SUBMIT_QUEUE_HEADERS = ['Timestamp', 'No', 'NamaPetugas', 'QtyCount', 'FacilityId', 'WaktuHitung'];
 
 // v8.31.0: pola queue yang sama diterapkan ke submitValidasi() & updateTaskStatus() (lihat
 // diskusi di ValidasiQueue.gs & TaskQueue.gs). closePlusMinusPair() SENGAJA TIDAK ikut --
 // validasi pemasangannya wajib baca data TERBARU kedua task (bukan operasi frekuensi tinggi
 // spt submit/validasi biasa), jadi tetap sinkron seperti sebelumnya.
 const VALIDASI_QUEUE_SHEET_NAME = 'Queue_Validasi';
-const VALIDASI_QUEUE_HEADERS = ['Timestamp', 'Id', 'NamaValidator', 'QtyValidasi', 'FacilityId'];
+const VALIDASI_QUEUE_HEADERS = ['Timestamp', 'Id', 'NamaValidator', 'QtyValidasi', 'FacilityId', 'WaktuHitung'];
 
 const TASK_QUEUE_SHEET_NAME = 'Queue_Task_Investigasi';
 const TASK_QUEUE_HEADERS = ['Timestamp', 'Id', 'NamaUser', 'NewStatus', 'Catatan', 'Kategori', 'PicUsername', 'BuktiRowsJSON', 'FacilityId'];

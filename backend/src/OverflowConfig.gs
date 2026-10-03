@@ -242,19 +242,42 @@ function isNikPunyaAksesSetting_(username) {
  * sendiri tanpa risiko infinite recursion.
  */
 function isUsernameRoleDeveloper_(usernameLowercase) {
-  const sheet = getMasterSheet_();
-  if (!sheet) return false;
-  const lastRow = sheet.getLastRow();
-  if (lastRow < 2) return false;
-  const values = sheet.getRange(2, 3, lastRow - 1, 2).getValues(); // kolom C (username), D (role)
-  for (let i = 0; i < values.length; i++) {
-    const u = String(values[i][0] || '').trim().toLowerCase();
-    if (u === usernameLowercase) {
-      const roleRaw = String(values[i][1] || '').trim().toLowerCase();
-      return roleRaw === 'developer' || roleRaw === 'dev' || roleRaw === 'dewa';
+  if (Object.prototype.hasOwnProperty.call(_memIsDeveloper_, usernameLowercase)) return _memIsDeveloper_[usernameLowercase];
+  const peranDev = function (roleRaw) {
+    const r = String(roleRaw || '').trim().toLowerCase();
+    return r === 'developer' || r === 'dev' || r === 'dewa';
+  };
+  let hasil = false, ketemu = false;
+  // Sumber utama: Master_User (A username, B role, C status) -- sama dengan yang dibaca getUserRole().
+  // Sebelumnya hanya sheet Master lama yang dibaca, sehingga Developer yang terdaftar di Master_User
+  // tidak dianggap Developer di sini (tanpa akses Config dan tanpa pemilih facility).
+  const mu = (typeof getMasterUserSheetWithFallback_ === 'function') ? getMasterUserSheetWithFallback_() : null;
+  const muLast = mu ? mu.getLastRow() : 0;
+  if (muLast >= 2) {
+    const v = mu.getRange(2, 1, muLast - 1, 3).getValues();
+    for (let i = 0; i < v.length; i++) {
+      if (String(v[i][0] || '').trim().toLowerCase() === usernameLowercase) {
+        ketemu = true;
+        hasil = isBarisUserAktif_(v[i][2]) && peranDev(v[i][1]);
+        break;
+      }
     }
   }
-  return false;
+  if (!ketemu) {
+    const sheet = getMasterSheet_();
+    const lastRow = sheet ? sheet.getLastRow() : 0;
+    if (lastRow >= 2) {
+      const values = sheet.getRange(2, 3, lastRow - 1, 3).getValues(); // kolom C (username), D (role), E (status)
+      for (let i = 0; i < values.length; i++) {
+        if (String(values[i][0] || '').trim().toLowerCase() === usernameLowercase) {
+          hasil = isBarisUserAktif_(values[i][2]) && peranDev(values[i][1]);
+          break;
+        }
+      }
+    }
+  }
+  _memIsDeveloper_[usernameLowercase] = hasil;
+  return hasil;
 }
 
 /**
@@ -270,11 +293,16 @@ function getDaftarAksesSetting(requesterUsername) {
   const lastRow = sheet.getLastRow();
   const daftar = [];
   if (lastRow >= 2) {
+    // Kolom tanggal ini sel tanggal biasa (tengah malam menurut zona waktu SPREADSHEET), jadi
+    // diformat dengan zona waktu yang sama; memakai Asia/Jakarta di spreadsheet ber-zona WITA/WIT
+    // akan mundur satu hari.
+    let tz = 'Asia/Jakarta';
+    try { tz = sheet.getParent().getSpreadsheetTimeZone() || tz; } catch (e) { /* pakai bawaan */ }
     const values = sheet.getRange(2, 1, lastRow - 1, 3).getValues();
     values.forEach(function (r, idx) {
       const nik = String(r[0] || '').trim();
       if (!nik) return;
-      daftar.push({ rowIndex: idx + 2, nik: nik, nama: String(r[1] || '').trim(), tanggal: String(r[2] || '').trim() });
+      daftar.push({ rowIndex: idx + 2, nik: nik, nama: String(r[1] || '').trim(), tanggal: Object.prototype.toString.call(r[2]) === '[object Date]' ? Utilities.formatDate(r[2], tz, 'yyyy-MM-dd') : String(r[2] || '').trim() });
     });
   }
   return { success: true, daftar: daftar };
@@ -299,6 +327,8 @@ function tambahAksesSetting(requesterUsername, nikBaru, namaBaru) {
   }
 
   sheet.appendRow([nik, String(namaBaru || '').trim(), todayJakarta_()]);
+  // Info user (termasuk tanda akses Config) di-cache 5 menit: buang supaya akses baru langsung terlihat.
+  clearUserRoleCache_(nik);
   catatLogPerubahanConfig_(requesterUsername, 'Akses Setting', 'Tambah akses NIK "' + nik + '".');
   return { success: true, message: 'NIK "' + nik + '" berhasil ditambahkan ke akses Config.' };
 }
@@ -326,6 +356,7 @@ function hapusAksesSetting(requesterUsername, rowIndex, nikKonfirmasi) {
   }
 
   sheet.deleteRow(rowIndex);
+  clearUserRoleCache_(actualNik);
   catatLogPerubahanConfig_(requesterUsername, 'Akses Setting', 'Cabut akses NIK "' + actualNik + '".');
   return { success: true, message: 'Akses NIK "' + actualNik + '" dicabut.' };
 }

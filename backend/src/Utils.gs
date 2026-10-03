@@ -223,6 +223,26 @@ function getLevelGroup_(level) {
   return LEVEL_GROUPS[LEVEL_GROUPS.length - 1];
 }
 
+/**
+ * Jam dari HP (epoch ms) → Date, atau null bila tidak masuk akal: di masa depan (lebih dari 2 menit)
+ * atau lebih tua dari 12 jam. Jam HP yang salah setel tidak boleh mengacaukan tanggal hitung.
+ */
+function waktuKlienSah_(ms) {
+  const t = Number(ms);
+  if (!t || isNaN(t)) return null;
+  const now = new Date().getTime();
+  if (t > now + 2 * 60000 || t < now - 12 * 3600000) return null;
+  return new Date(t);
+}
+
+/** Waktu kejadian untuk satu baris antrean: jam dari HP bila ada, kalau tidak jam baris itu diterima server. */
+function waktuBarisAntrean_(waktuHitung, timestampAntrean) {
+  const isDate = function (v) { return Object.prototype.toString.call(v) === '[object Date]' && !isNaN(v.getTime()); };
+  if (isDate(waktuHitung)) return waktuHitung;
+  if (isDate(timestampAntrean)) return timestampAntrean;
+  return new Date();
+}
+
 function rowDateTag_(row) {
   const waktuCycle = row[15];
   if (Object.prototype.toString.call(waktuCycle) === '[object Date]') {

@@ -95,7 +95,7 @@ function findDataCountRowAndValues_(sheet, no) {
   return null;
 }
 
-function submitCount(no, namaPetugas, qtyCount) {
+function submitCount(no, namaPetugas, qtyCount, waktuKlien, facKlien) {
   requireRole_(namaPetugas, ALL_CYCLE_LIKE_ROLES);
   const aktual = Number(qtyCount);
   if (qtyCount === '' || qtyCount === null || qtyCount === undefined || isNaN(aktual) || aktual < 0) {
@@ -104,7 +104,10 @@ function submitCount(no, namaPetugas, qtyCount) {
 
   const facInfo = requireUserFacility_(namaPetugas);
   if (!facInfo) {
-    return { success: false, message: 'Akun Anda belum di-assign ke facility manapun (atau facility-nya nonaktif).' };
+    return { success: false, message: PESAN_TANPA_FACILITY_ };
+  }
+  if (!facilityKlienCocok_(facKlien, facInfo)) {
+    return { success: false, kode: 'FACILITY_BERUBAH', message: PESAN_FACILITY_BERUBAH_ };
   }
 
   // v8.30.0 (Asynchronous Queue Processing): submitCount() SEKARANG TIDAK LAGI membuka
@@ -129,7 +132,7 @@ function submitCount(no, namaPetugas, qtyCount) {
   // 3. Item duplikat/double-submit disaring oleh Worker (cek status masih "Pending" sebelum
   //    proses), bukan lagi oleh itemClaimKey/facLock synchronous di sini.
   try {
-    queueSubmitPayload_(no, namaPetugas, aktual, facInfo.id);
+    queueSubmitPayload_(no, namaPetugas, aktual, facInfo.id, waktuKlienSah_(waktuKlien));
   } catch (e) {
     return { success: false, message: 'Gagal masuk antrian submit: ' + e.message };
   }
