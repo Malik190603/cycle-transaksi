@@ -9,7 +9,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
-import { createDemoBackend } from './harness.mjs';
+import { createDemoBackend, createBackend } from './harness.mjs';
 
 const require = createRequire(import.meta.url);
 let chromium;
@@ -23,7 +23,10 @@ const EXEC = 'https://script.google.com/macros/s/AKfycbTEST_deploy-123/exec';
 const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.woff2': 'font/woff2' };
 
 if (!fs.existsSync(path.join(WWW, 'app.js'))) { console.error('www/ belum ada. Jalankan: npm run build'); process.exit(1); }
+// Panel admin: halaman yang disajikan doGet dari backend/Code.gs (file siap tempel), persis seperti di Apps Script.
+const PANEL = createBackend({ single: true }).ctx.doGet({}).getContent();
 const server = http.createServer((q, r) => {
+  if (q.url === '/panel') { r.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' }); return r.end(PANEL); }
   const f = path.join(WWW, q.url === '/' ? 'index.html' : q.url.split('?')[0]);
   if (!f.startsWith(WWW) || !fs.existsSync(f)) { r.writeHead(404); return r.end(); }
   r.writeHead(200, { 'Content-Type': MIME[path.extname(f)] || 'application/octet-stream' }); r.end(fs.readFileSync(f));
@@ -46,7 +49,7 @@ const semuaGalat = [];
  * server yang lambat atau menolak. `tunda` dan `tundaRilis` boleh berupa milidetik atau janji dari gerbang():
  * jawaban ditahan sampai uji membukanya, jadi urutan kejadian tidak bergantung pada kecepatan mesin.
  */
-async function buka({ be = null, remote = EXEC, conf = null, latest = null, ubah = null, w = 393, h = 852, penyimpanan = null, gelap = false } = {}) {
+async function buka({ be = null, remote = EXEC, conf = null, latest = null, ubah = null, w = 393, h = 852, penyimpanan = null, gelap = false, jalur = '/' } = {}) {
   const ctx = await browser.newContext({ viewport: { width: w, height: h }, deviceScaleFactor: 1, hasTouch: true, isMobile: true, colorScheme: gelap ? 'dark' : 'light' });
   const panggilan = [], st = { offline: false, ubah, tunda: null, tundaRilis: 0 };
   await ctx.route('https://raw.githubusercontent.com/**', (r) => r.fulfill({ status: 200, contentType: 'application/json', headers: { 'Access-Control-Allow-Origin': '*' }, body: JSON.stringify({ url: remote }) }));
@@ -77,7 +80,19 @@ async function buka({ be = null, remote = EXEC, conf = null, latest = null, ubah
   const galat = [];
   page.on('pageerror', (e) => galat.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/ERR_INTERNET_DISCONNECTED|Failed to load resource/.test(m.text())) galat.push('console: ' + m.text()); });
-  await page.goto(ORIGIN + '/');
+  if (jalur === '/panel') {
+    // di Apps Script halaman ini memanggil backend lewat google.script.run; di sini diteruskan ke backend uji
+    await ctx.route('https://fonts.googleapis.com/**', (r) => r.fulfill({ status: 200, contentType: 'text/css', body: '' }));
+    await ctx.route('https://cdnjs.cloudflare.com/**', (r) => r.fulfill({ status: 200, contentType: 'text/javascript', body: fs.readFileSync(path.join(ROOT, 'node_modules/xlsx/dist/xlsx.full.min.js')) }));
+    await ctx.addInitScript((exec) => {
+      const buat = (ok, gagal) => ({
+        withSuccessHandler: (f) => buat(f, gagal), withFailureHandler: (g) => buat(ok, g),
+        panelApi: (aksi, argsJson) => { fetch(exec, { method: 'POST', body: JSON.stringify({ action: aksi, args: JSON.parse(argsJson) }) }).then((x) => x.text()).then(ok, gagal); }
+      });
+      window.google = { script: { run: buat(() => {}, () => {}) } };
+    }, EXEC);
+  }
+  await page.goto(ORIGIN + jalur);
   await page.waitForSelector('.scr.is-on');
   // setOffline Playwright tidak memutus permintaan yang dijawab lewat route, jadi diputus di sini juga
   const offline = async (v) => { st.offline = v; await ctx.setOffline(v); };
@@ -111,7 +126,7 @@ const dataCount = () => be.rows('Data Count');
 
 /* ------------------------------------------------------------------ */
 await bagian('1. Layar masuk tanpa server: tidak ada pengaturan server', async () => {
-  const s = await buka({ remote: '' });
+  const s = await buka({ remote: '', conf: { serverUrl: '' } }); // build ini bisa sudah membawa alamat dari app/server.json
   await s.page.waitForFunction(() => /belum tersambung/.test(document.getElementById('lgStatus').textContent));
   cek('status menyebut aplikasi belum tersambung', true);
   const isiLayar = await teks(s.page, '#scr-login');
@@ -431,7 +446,8 @@ await bagian('5. Admin: Upload Data dari file Excel', async () => {
   cek('tugas baru tercatat di server', dataCount().length - sebelum === ditugaskan && ditugaskan > 0 && ditugaskan <= 12, { ditugaskan, tambah: dataCount().length - sebelum });
   cek('baris tipe lain dilaporkan dilewati', /tipe selain Move dan Picking/.test(await teks(s.page, '.lembar')));
   await s.page.click('.lembar [data-aksi="ke"]'); await s.page.waitForSelector('#scr-home.is-on .kpi');
-  cek('kembali ke Home dengan angka terbaru', angka((await s.page.$$eval('.kpi__nilai', (n) => n.map((x) => x.textContent)))[1]) === be.api('getHomeBundle', ADMIN).outstanding);
+  await s.page.waitForFunction(() => !document.querySelector('#hmSegar.is-putar'), null, { timeout: 15000 }); // Home menampilkan data lama dulu, lalu memperbarui
+  cek('kembali ke Home dengan angka terbaru', angka((await s.page.$$eval('.kpi__nilai', (n) => n.map((x) => x.textContent)))[1]) === be.api('getHomeBundle', ADMIN).outstanding, { tampil: await s.page.$$eval('.kpi__nilai', (n) => n.map((x) => x.textContent)), server: be.api('getHomeBundle', ADMIN).outstanding });
   await s.page.click('#tab-upload'); await s.page.waitForSelector('.up-berkas');
   cek('pilihan petugas terakhir diingat untuk upload berikutnya', (await s.page.evaluate(() => Object.keys(JSON.parse(localStorage.getItem(Object.keys(localStorage).find((k) => k.indexOf('ct.petugas.') === 0)))).length)) === 6);
 
@@ -800,6 +816,41 @@ await bagian('9. Muat di layar kecil dan tema gelap', async () => {
   await masuk(s.page, ADMIN);
   const warna = await s.page.evaluate(() => ({ latar: getComputedStyle(document.body).backgroundColor, teks: getComputedStyle(document.body).color }));
   cek('tema gelap dipakai sejak aplikasi dibuka', warna.latar === 'rgb(15, 17, 21)', warna);
+  await s.tutup();
+});
+
+/* ------------------------------------------------------------------ */
+await bagian('10. Panel admin di browser (halaman Web App): Upload, Facility, Config', async () => {
+  const s = await buka({ be, jalur: '/panel', w: 1280, h: 800 });
+  await s.page.waitForFunction(() => /^Tersambung/.test(document.getElementById('lgStatus').textContent.trim()), null, { timeout: 15000 });
+  cek('layar masuk panel menjelaskan isinya', /Panel admin/.test(await teks(s.page, '.lg__ket')) && !(await s.page.$('[data-aksi="cek-versi"]')));
+  await s.page.fill('#lgNik', PETUGAS); await s.page.click('#lgTombol');
+  await s.page.waitForFunction(() => document.getElementById('lgPesan').textContent.length > 0);
+  cek('petugas ditolak dengan penjelasan', /khusus admin/.test(await teks(s.page, '#lgPesan')) && (await s.page.evaluate(() => localStorage.getItem('ct.sesi'))) === null, await teks(s.page, '#lgPesan'));
+  await s.page.fill('#lgNik', ADMIN); await s.page.click('#lgTombol');
+  await s.page.waitForSelector('#scr-upload.is-on .up-berkas', { timeout: 15000 });
+  cek('menu panel: Upload, Config, Akun', (await s.page.$$eval('.nav__item span', (n) => n.map((x) => x.textContent))).join(',') === 'Upload,Config,Akun');
+  // upload dari file .csv di komputer
+  const lok = be.rows('Lokasi_Aktif').map((r) => r[0]), LP = lok.filter((l) => /\.1$/.test(String(l)))[41]; // Level 1: tidak butuh alat bantu
+  const fT = path.join(TMP, 'panel-transaksi.csv'), fS = path.join(TMP, 'panel-stok.csv');
+  fs.writeFileSync(fT, 'Type,Article,Description,From Location,To Location,Qty,AddWho\nPicking,77700001,BARANG PANEL,' + LP + ',,1,wms.uji\n');
+  fs.writeFileSync(fS, 'Location,Article,Qty\n' + LP + ',77700001,9\n');
+  await s.page.setInputFiles('input[data-berkas="transaksi"]', fT);
+  await s.page.setInputFiles('input[data-berkas="stok"]', fS);
+  await s.page.waitForFunction(() => document.querySelectorAll('.up-berkas.is-ok').length === 2, null, { timeout: 15000 });
+  if (!(await s.page.$eval('.bag small', (n) => /^[1-9]/.test(n.textContent)))) await s.page.click('[data-aksi="upload-peran"][data-peran="outbound"]');
+  const sebelum = dataCount().length;
+  await s.page.click('#upProses'); await s.page.waitForSelector('.up-hasil', { timeout: 30000 });
+  cek('upload dari panel masuk ke database yang sama dengan aplikasi', dataCount().length === sebelum + 1 && dataCount().some((r) => String(r[4]) === '77700001'), { tambah: dataCount().length - sebelum, lembar: await teks(s.page, '.lembar'), kirim: s.panggilan.filter((p) => p.action === 'importRawData').pop() });
+  await s.page.click('.lembar__kaki [data-tutup]'); await s.page.waitForSelector('.lembar-wadah', { state: 'detached' });
+  // config dan facility
+  await s.page.click('#tab-config'); await s.page.waitForSelector('#cfUsers .list', { timeout: 15000 });
+  cek('Config tampil sebagai menu (tanpa tombol kembali)', !(await s.page.$('#scr-config [data-aksi="kembali"]')));
+  await s.page.click('[data-aksi="config-tab"][data-v="facility"]'); await s.page.waitForSelector('.cf-fac__db');
+  cek('Facility: tautan ke database Google Sheets tiap gudang', /^https:\/\/docs\.google\.com\/spreadsheets\/d\//.test(await s.page.$eval('.cf-fac__db', (n) => n.href)));
+  await s.page.click('#tab-akun'); await s.page.click('[data-aksi="akun-keluar"]');
+  await s.page.waitForSelector('#scr-login.is-on');
+  cek('keluar dari panel kembali ke layar masuk', true);
   await s.tutup();
 });
 

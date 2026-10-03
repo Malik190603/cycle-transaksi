@@ -4,7 +4,7 @@
  * (app/server.json atau variabel GAS_URL) dan diperbarui otomatis dari berkas yang sama di repo,
  * jadi HP yang sudah terpasang ikut pindah bila alamat Web App berganti.
  */
-const CFG = Object.assign({ version: 'dev', updateRepo: '', nativeBase: '', build: 0, serverUrl: '', demoSaja: false, xlsxUrl: '' }, window.CT_CONFIG || {});
+const CFG = Object.assign({ version: 'dev', updateRepo: '', nativeBase: '', build: 0, serverUrl: '', demoSaja: false, xlsxUrl: '', panel: false }, window.CT_CONFIG || {});
 const CAP = window.Capacitor || null;
 const NATIVE = !!(CAP && CAP.isNativePlatform && CAP.isNativePlatform());
 const PL = (CAP && CAP.Plugins) || {};
@@ -59,7 +59,7 @@ const Server = {
   },
   // Ambil alamat terbaru dari repo. Dipanggil saat aplikasi dibuka dan saat server tidak bisa dihubungi.
   sinkron(paksa) {
-    if (!CFG.updateRepo || CFG.demoSaja) return Promise.resolve(this.url());
+    if (!CFG.updateRepo || CFG.demoSaja || CFG.panel) return Promise.resolve(this.url());
     const r = LS.get('ct.server.remote');
     if (!paksa && r && Date.now() - (r.at || 0) < 30 * 60e3) return Promise.resolve(this.url());
     if (this._janji) return this._janji;
@@ -104,6 +104,12 @@ async function panggil(nama, ...args) {
   let j;
   if (Demo.aktif) {
     j = await Demo.kirim(nama, JSON.parse(JSON.stringify(argumen)));
+  } else if (CFG.panel) {
+    // Panel admin dibuka dari halaman Web App itu sendiri: fungsi backend dipanggil lewat google.script.run
+    // (jawabannya teks JSON dengan bentuk yang sama seperti doPost).
+    try {
+      j = JSON.parse(await new Promise((ok, gagal) => { window.google.script.run.withSuccessHandler(ok).withFailureHandler(gagal).panelApi(nama, JSON.stringify(argumen)); }));
+    } catch (e) { throw galatJaringan(e); }
   } else {
     let url = Server.url();
     if (!url) url = await Server.sinkron(true);

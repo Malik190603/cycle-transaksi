@@ -6,7 +6,14 @@
  */
 
 function doGet(e) {
-  // Tampilan sekarang ada di aplikasi Android (APK); Web App ini hanya melayani doPost.
+  // Panel admin (Upload Data, Facility, Config) untuk dibuka di browser komputer. Isinya tampilan yang sama
+  // dengan aplikasi Android, ditanam ke Code.gs saat "npm run backend" (PANEL_HTML_). Aplikasi Android
+  // tetap memakai doPost di alamat /exec yang sama.
+  if (typeof PANEL_HTML_ === 'string' && PANEL_HTML_) {
+    return HtmlService.createHtmlOutput(PANEL_HTML_)
+      .setTitle('Cycle Transaksi - Panel Admin')
+      .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+  }
   return HtmlService.createHtmlOutput(
     '<div style="font-family:sans-serif;padding:24px;line-height:1.5">' +
     '<h3>Cycle Transaksi \u2014 server aktif (' + APP_VERSION + ')</h3>' +
@@ -14,6 +21,19 @@ function doGet(e) {
     'ditanam di aplikasi oleh pengembang; pengguna cukup masuk dengan NIK.</p></div>')
     .setTitle('Cycle Transaksi')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+
+/**
+ * Dipanggil panel admin lewat google.script.run. Fungsi dan aturan aksesnya sama persis dengan
+ * doPost (daftar API_BRIDGE_ALLOW_); argumen dan jawaban berupa teks JSON supaya tanggal dan
+ * daftar panjang (isi file upload) melewati google.script.run tanpa diubah.
+ */
+function panelApi(action, argsJson) {
+  var args;
+  try { args = JSON.parse(String(argsJson || '[]')); } catch (err) { args = null; }
+  if (!Array.isArray(args)) return JSON.stringify({ ok: false, error: 'Permintaan tidak valid.' });
+  resetMemEksekusi_();
+  return apiBridge_({ action: String(action || ''), args: args }).getContent();
 }
 
 /**

@@ -5,6 +5,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { minify } from 'terser';
+import { panelHtml } from './panel.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SRC = path.join(ROOT, 'backend', 'src');
@@ -27,7 +28,9 @@ const head = `/**
  * URL /exec tidak berubah, jadi aplikasi tidak perlu disetel ulang.
  */
 `;
-let body = head + out.code + '\n';
+// Panel admin ditanam sebagai teks: Code.gs tetap satu file yang cukup ditempel.
+const panel = await panelHtml();
+let body = head + out.code + '\nconst PANEL_HTML_ = ' + JSON.stringify(panel).replace(/\u2028/g, '\\u2028').replace(/\u2029/g, '\\u2029') + ';\n';
 // Salinan pribadi (tidak masuk repo): SETUP_NAMA, SETUP_KODE, SETUP_NIK + OUT=<path>
 const { SETUP_NAMA, SETUP_KODE, SETUP_NIK, OUT } = process.env;
 if (OUT) {

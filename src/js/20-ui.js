@@ -53,7 +53,7 @@ const Lembar = {
     };
     if (o.isi) isi(ctl.isi, o.isi);
     $('.lembar-tabir', wadah).addEventListener('click', () => { if (!ctl.terkunci) ctl.tutup(); });
-    $('[data-tutup]', wadah).addEventListener('click', () => { if (!ctl.terkunci) ctl.tutup(); });
+    $$('[data-tutup]', wadah).forEach((b) => b.addEventListener('click', () => { if (!ctl.terkunci) ctl.tutup(); }));
     this.tumpukan.push(ctl);
     void wadah.offsetWidth; wadah.classList.add('is-on');
     return ctl;
@@ -169,11 +169,18 @@ const TAB = [
   { id: 'upload', nama: 'Upload', ikon: 'unggah', boleh: () => Boleh.admin() },
   { id: 'report', nama: 'Report', ikon: 'grafik', boleh: () => Boleh.admin() }
 ];
+// Panel admin (halaman Web App di browser): hanya Upload dan Config, sisanya dikerjakan di aplikasi HP.
+const TAB_PANEL = [
+  { id: 'upload', nama: 'Upload', ikon: 'unggah', boleh: () => Boleh.admin() },
+  { id: 'config', nama: 'Config', ikon: 'atur', boleh: () => Boleh.config() }
+];
 const Nav = {
   tab: '', halaman: [], lencana: {},
+  daftarTab() { return (CFG.panel ? TAB_PANEL : TAB).filter((t) => t.boleh()); },
+  awal() { const d = this.daftarTab(); return CFG.panel ? (d.length ? d[0].id : '') : 'home'; },
   bangun() {
     const n = el('nav');
-    isi(n, TAB.filter((t) => t.boleh()).map((t) => h`<button type="button" class="nav__item" data-aksi="tab" data-tab="${t.id}" id="tab-${t.id}">${ikon(t.ikon)}<span>${t.nama}</span></button>`));
+    isi(n, h`${this.daftarTab().map((t) => h`<button type="button" class="nav__item" data-aksi="tab" data-tab="${t.id}" id="tab-${t.id}">${ikon(t.ikon)}<span>${t.nama}</span></button>`)}${CFG.panel ? h`<button type="button" class="nav__item" data-aksi="akun" id="tab-akun">${ikon('orang')}<span>Akun</span></button>` : ''}`);
     this._lencana();
   },
   setLencana(id, n) { this.lencana[id] = Number(n) || 0; this._lencana(); },
@@ -192,8 +199,7 @@ const Nav = {
   },
   aktif() { return this.halaman.length ? this.halaman[this.halaman.length - 1].id : this.tab; },
   ke(id, params) {
-    const t = TAB.find((x) => x.id === id);
-    if (!t || !t.boleh()) id = 'home';
+    if (!this.daftarTab().some((x) => x.id === id)) id = this.awal();
     const lama = this.aktif();
     if (lama && Layar[lama] && Layar[lama].keluar) Layar[lama].keluar();
     this.halaman = []; this.tab = id;
@@ -222,7 +228,7 @@ const Nav = {
       if (Layar[id] && Layar[id].masuk) Layar[id].masuk({ kembali: true });
       return true;
     }
-    if (this.tab && this.tab !== 'home' && this.tab !== 'login') { this.ke('home'); return true; }
+    if (this.tab && this.tab !== this.awal() && this.tab !== 'login') { this.ke(this.awal()); return true; }
     return false;
   }
 };

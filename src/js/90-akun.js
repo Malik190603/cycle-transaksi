@@ -32,6 +32,7 @@ const Pembaruan = {
   // Hanya satu pemeriksaan yang berjalan. Ketukan "Periksa pembaruan" saat pemeriksaan otomatis masih jalan
   // tidak memulai yang kedua: hasil pemeriksaan yang sedang berjalan itulah yang menjawabnya.
   async cek(manual) {
+    if (CFG.panel) return;
     if (!CFG.updateRepo || CFG.version === 'dev' || CFG.demoSaja) { if (manual) Toast.tampil('Pembaruan hanya tersedia di aplikasi Android.'); return; }
     const baris = () => el('akVersi'); // baris "Periksa pembaruan" di lembar Akun (bila sedang terbuka)
     if (manual) this._manual = true;
@@ -151,8 +152,8 @@ const Akun = {
         <div class="list">
           <div class="row"><span class="row__isi"><span class="row__t">Tema gelap</span><span class="row__s">Untuk area gudang yang redup</span></span><button type="button" class="saklar" role="switch" aria-checked="${Tema.gelap()}" aria-label="Tema gelap" data-aksi="akun-tema"></button></div>
           ${Boleh.developer() ? h`<div class="row"><span class="row__isi"><span class="row__t">Facility aktif</span><select class="field field--kecil" id="akFacility" style="margin-top:8px" aria-label="Facility aktif"><option value="">Memuat daftar facility…</option></select></span></div>` : ''}
-          ${Boleh.config() ? h`<button type="button" class="row" data-aksi="akun-config">${ikon('atur')}<span class="row__isi"><span class="row__t">Config</span><span class="row__s">User, pembagian tugas, akses, facility</span></span><span class="row__ekor">${ikon('kanan', 'ic--kecil')}</span></button>` : ''}
-          <button type="button" class="row" data-aksi="cek-versi">${ikon('unduh')}<span class="row__isi"><span class="row__t">Periksa pembaruan</span><span class="row__s" id="akVersi">${this.versiTeks()}</span></span>${Pembaruan.rilis ? h`<span class="pill pill--biru">Versi baru</span>` : ''}</button>
+          ${Boleh.config() && !CFG.panel ? h`<button type="button" class="row" data-aksi="akun-config">${ikon('atur')}<span class="row__isi"><span class="row__t">Config</span><span class="row__s">User, pembagian tugas, akses, facility</span></span><span class="row__ekor">${ikon('kanan', 'ic--kecil')}</span></button>` : ''}
+          ${CFG.panel ? '' : h`<button type="button" class="row" data-aksi="cek-versi">${ikon('unduh')}<span class="row__isi"><span class="row__t">Periksa pembaruan</span><span class="row__s" id="akVersi">${this.versiTeks()}</span></span>${Pembaruan.rilis ? h`<span class="pill pill--biru">Versi baru</span>` : ''}</button>`}
           <button type="button" class="row" data-aksi="akun-keluar" style="color:var(--merah-teks)">${ikon('keluar')}<span class="row__isi"><span class="row__t">${Demo.aktif && !CFG.demoSaja ? 'Keluar dari mode demo' : 'Keluar'}</span></span></button>
         </div>`,
       onTutup: () => { this.lembar = null; }
@@ -175,7 +176,7 @@ const Akun = {
       if (!res.success) throw new Error(res.message);
       const info = await panggil('getUserRole', Sesi.user.username);
       if (info) { Sesi.simpan(Sesi.dari(info)); Simpanan.bersih(); Home.mulai(); Tugas.reset(); Verifikasi.reset(); Upload.reset(); Report.reset(); Config.reset(); }
-      Lembar.tutupSemua(); Toast.tampil(res.message); Nav.ke('home'); Home.muat(true);
+      Lembar.tutupSemua(); Toast.tampil(res.message); Nav.ke(Nav.awal()); if (!CFG.panel) Home.muat(true);
     } catch (e) { Toast.galat(e); if (sel) sel.disabled = false; }
   },
   async keluar() {

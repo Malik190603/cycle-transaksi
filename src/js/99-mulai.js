@@ -19,7 +19,9 @@ function masukAplikasi(user) {
   el('nav').hidden = false;
   Nav.bangun();
   if (Demo.aktif) Pita.pasang('demo', h`Mode demo. Data contoh, perubahan tidak tersimpan.`); else Pita.lepas('demo');
-  Nav.ke('home');
+  // Panel admin hanya untuk yang boleh Upload atau Config; petugas memakai aplikasi di HP.
+  if (CFG.panel && !Nav.awal()) { keluarAplikasi('Halaman ini khusus admin dan pemegang akses Config. Petugas memakai aplikasi di HP.'); return; }
+  Nav.ke(Nav.awal());
 }
 
 function keluarAplikasi(pesan) {

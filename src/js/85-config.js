@@ -14,7 +14,7 @@ const Config = {
   gambar() {
     const node = el('scr-config');
     const TABS = [['user', 'User'], ['tugas', 'Pembagian tugas'], ['akses', 'Akses'], ['facility', 'Facility']];
-    isi(node, h`${kepalaHalaman('Config', Sesi.user.facilityName || '', h`<button type="button" class="iconbtn${this.jalan[this.tab] ? ' is-putar' : ''}" data-aksi="config-segar" aria-label="Perbarui">${ikon('segar')}</button>`)}
+    isi(node, h`${(CFG.panel ? kepala : kepalaHalaman)('Config', Sesi.user.facilityName || '', h`<button type="button" class="iconbtn${this.jalan[this.tab] ? ' is-putar' : ''}" data-aksi="config-segar" aria-label="Perbarui">${ikon('segar')}</button>`)}
       <div class="chips" style="margin-bottom:14px" role="tablist">${TABS.map((t) => h`<button type="button" role="tab" class="chip${this.tab === t[0] ? ' is-on' : ''}" data-aksi="config-tab" data-v="${t[0]}">${t[1]}</button>`)}</div>
       <div id="cfIsi">${this.galat[this.tab] ? gagalMuat(this.galat[this.tab], 'config-segar') : this[this.tab + 'Html']()}</div>`);
     const c = el('cfCari');
@@ -358,7 +358,7 @@ const Config = {
   }
 };
 
-Layar.config = { masuk() { if (!Boleh.config()) { Nav.ke('home'); return; } Config.gambar(); Config.muat(false); } };
+Layar.config = { masuk() { if (!Boleh.config()) { Nav.ke(Nav.awal()); return; } Config.gambar(); Config.muat(false); } };
 Aksi['config-segar'] = () => Config.muat(true);
 Aksi['config-tab'] = (t) => { Config.tab = t.dataset.v; delete Config.galat[Config.tab]; Config.gambar(); Config.muat(false); };
 Aksi['config-user-tambah'] = (t) => {

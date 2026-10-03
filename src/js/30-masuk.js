@@ -30,7 +30,7 @@ const Masuk = {
     isi(el('scr-login'), h`<div class="lg">
       <div class="lg__gambar">${GAMBAR_RAK}</div>
       <h1 class="lg__judul">Cycle Transaksi</h1>
-      <p class="lg__ket">Masuk dengan NIK untuk melihat tugas hari ini.</p>
+      <p class="lg__ket">${CFG.panel ? 'Panel admin: upload data, facility gudang, dan config. Masuk dengan NIK admin.' : 'Masuk dengan NIK untuk melihat tugas hari ini.'}</p>
       <form id="lgForm" novalidate>
         <label class="lbl" for="lgNik">NIK</label>
         <input class="field" id="lgNik" type="text" inputmode="text" autocomplete="username" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="go" placeholder="contoh: 123456.nama">
@@ -39,7 +39,7 @@ const Masuk = {
       </form>
       <div class="lg__status" id="lgStatus" aria-live="polite"></div>
       <div id="lgDemo"></div>
-      <div class="lg__kaki"><span>Versi ${CFG.version}</span><button type="button" class="tautan" data-aksi="cek-versi">Periksa pembaruan</button></div>
+      <div class="lg__kaki"><span>Versi ${CFG.version}</span>${CFG.panel ? '' : h`<button type="button" class="tautan" data-aksi="cek-versi">Periksa pembaruan</button>`}</div>
     </div>`);
     el('lgForm').addEventListener('submit', (ev) => { ev.preventDefault(); this.kirim(); });
     el('lgNik').addEventListener('input', () => this.pesan(''));
@@ -74,6 +74,7 @@ const Masuk = {
   async cekServer() {
     if (CFG.demoSaja || Demo.aktif) { this.setStatus('demo'); return; }
     this.setStatus('cek');
+    if (CFG.panel) { try { await panggil('getAppVersion'); this.setStatus('siap'); } catch (e) { this.setStatus('galat'); } return; }
     try {
       const url = Server.url() || await Server.sinkron(true);
       if (!url) { this.setStatus(navigator.onLine ? 'tanpa' : 'offline'); return; }

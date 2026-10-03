@@ -231,7 +231,7 @@ const Upload = {
         </div>` : ''}
         ${peringatan.length ? h`<div class="info info--jingga" style="margin-bottom:12px">${ikon('awas')}<div><b>Ada item yang tidak dibagi.</b> ${peringatan.join(' ')} Rinciannya tercatat di sheet Log_Unassigned.</div></div>` : ''}
         ${catatan.map((c) => h`<div class="info" style="margin-bottom:10px">${ikon('info')}<div>${c}</div></div>`)}`,
-      kaki: h`<button type="button" class="btn" data-aksi="ke" data-tab="home">${peringatan.length ? 'Mengerti, kembali ke Home' : 'Kembali ke Home'}</button>`
+      kaki: CFG.panel ? h`<button type="button" class="btn" data-tutup>${peringatan.length ? 'Mengerti' : 'Selesai'}</button>` : h`<button type="button" class="btn" data-aksi="ke" data-tab="home">${peringatan.length ? 'Mengerti, kembali ke Home' : 'Kembali ke Home'}</button>`
     });
   }
 };

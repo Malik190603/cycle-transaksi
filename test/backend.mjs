@@ -329,7 +329,11 @@ check('Mode Matrix: petugas yang perannya belum dicentang dicatat', (() => {
 })());
 const hbAkhir = api('getHomeBundle', ADMIN);
 check('Home: tanggal kerja server dan item tanpa petugas dipisah dari daftar orang', hbAkhir.hariIni === today && hbAkhir.belumDitugaskan === 0 && hbAkhir.perPetugas.every((p) => p.nama && p.nama.charAt(0) !== '('), hbAkhir.perPetugas);
-check('doGet menampilkan halaman server aktif', /server aktif/.test(ctx.doGet({}).getContent()));
+check(single ? 'doGet menyajikan panel admin (mode panel, tanpa alamat server tertanam)' : 'doGet menampilkan halaman server aktif', single ? /"panel":true/.test(ctx.doGet({}).getContent()) && /id="scr-upload"/.test(ctx.doGet({}).getContent()) : /server aktif/.test(ctx.doGet({}).getContent()));
+check('panelApi: jalur yang sama dengan doPost, hanya fungsi terdaftar', (() => {
+  const a = JSON.parse(ctx.panelApi('getUserRole', JSON.stringify([ADMIN]))), b = JSON.parse(ctx.panelApi('setupAwal', '[]')), c = JSON.parse(ctx.panelApi('getUserRole', 'bukan json'));
+  return a.ok === true && a.result.role === 'admin' && b.ok === false && /tidak dikenal/.test(b.error) && c.ok === false;
+})());
 check('router lama (tanpa args) tetap jalan', JSON.parse(ctx.doPost({ postData: { contents: JSON.stringify({ action: 'getAppVersion' }) } }).getContent()).success === true);
 const errLog = rows('Log_Sistem').filter((r) => /ERROR/.test(r[2]));
 check('tidak ada ERROR worker di Log_Sistem', errLog.length === 0, errLog);
